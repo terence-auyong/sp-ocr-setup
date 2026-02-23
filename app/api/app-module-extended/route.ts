@@ -4,7 +4,15 @@ import { pool } from "@/lib/db";
 export const GET = async (req: NextRequest) => {
     try {
         const [rows] = await pool.query(
-            `SELECT * FROM app_uom;`
+            `
+            SELECT id, code, name FROM app_module 
+            WHERE code IN (
+                'device_inventory_areas',
+                'device_osa',
+                'device_near_expiry',
+                'device_sos'
+            );
+            `
         );
 
         return NextResponse.json(rows);

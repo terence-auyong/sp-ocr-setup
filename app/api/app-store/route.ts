@@ -4,7 +4,7 @@ import { pool } from "@/lib/db";
 export const GET = async (req: NextRequest) => {
     try {
         const [rows] = await pool.query(
-            `SELECT * FROM app_uom;`
+            `SELECT id, store_code, name FROM app_store`
         );
 
         return NextResponse.json(rows);

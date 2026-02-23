@@ -9,6 +9,7 @@ export const fetchInventoryArea = async () => {
     const res = await fetch("/api/inventory-group-areas");
     if (!res.ok) throw new Error("Failed to fetch inventory group areas.")
     const data = await res.json();
+    console.log("Inventory areas: ", data)
     return data;
 }
 
