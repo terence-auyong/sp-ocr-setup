@@ -1,26 +1,23 @@
 import { useState } from "react";
 import { LuX } from "react-icons/lu";
+import { STAGE_COOKIE_NAME, EDTR_STAGES, STAGE_LABELS, type EdtrStage } from "@/lib/edtr-stage-constants";
 
 type DbCredentialsProps = {
     onClose: () => void;
     onLoginSuccess?: (tokens: { accessToken: string; idToken: string }) => void;
 }
 
-type Environment = "QA" | "Development" | "Production";
+function setStageCookie(stage: EdtrStage) {
+    document.cookie = `${STAGE_COOKIE_NAME}=${stage}; path=/; max-age=2592000; samesite=lax`;
+}
 
 const DbCredentials = ({onClose, onLoginSuccess}: DbCredentialsProps) => {
     const [isShowPassword, setIsShowPassword] = useState(false);
-    const [selectedEnv, setSelectEnv] = useState<Environment | string>("");
+    const [selectedEnv, setSelectEnv] = useState<EdtrStage | "">("");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
-    const environment= [
-        {id: 1, name: "QA" },
-        {id: 2, name: "Development"},
-        {id: 3, name: "Production"}
-    ];
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -103,12 +100,16 @@ const DbCredentials = ({onClose, onLoginSuccess}: DbCredentialsProps) => {
                         <select 
                             className="h-8 w-80 bg-gray-200 rounded"
                             value={selectedEnv}
-                            onChange={(e) => setSelectEnv(e.target.value)}
+                            onChange={(e) => {
+                                const stage = e.target.value as EdtrStage;
+                                setSelectEnv(stage);
+                                if (stage) setStageCookie(stage);
+                            }}
                         >
                             <option value="">Select an option</option>
-                            {environment.map((env) => (
-                                <option key={env.id} value={env.name}>
-                                    {env.name}
+                            {EDTR_STAGES.map((stage) => (
+                                <option key={stage} value={stage}>
+                                    {STAGE_LABELS[stage]}
                                 </option>
                             ))}
                         </select>

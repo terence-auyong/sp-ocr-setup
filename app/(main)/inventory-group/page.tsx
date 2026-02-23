@@ -14,6 +14,7 @@ const page = () => {
     } = useQuery({
         queryKey: ['inventoryGroup'],
         queryFn: fetchInventoryGroup,
+        staleTime: 0,
     });
 
     const {
@@ -23,6 +24,7 @@ const page = () => {
     } = useQuery({
         queryKey: ['inventoryArea'],
         queryFn: fetchInventoryArea,
+        staleTime: 0,
     });
 
     const originalAreaData = useRef<AreaDataState>({});

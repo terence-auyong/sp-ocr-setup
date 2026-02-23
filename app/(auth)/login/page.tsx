@@ -1,10 +1,19 @@
 "use client"
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { STAGE_COOKIE_NAME, EDTR_STAGES, STAGE_LABELS, type EdtrStage } from "@/lib/edtr-stage-constants";
+
+function setStageCookie(stage: EdtrStage) {
+	document.cookie = `${STAGE_COOKIE_NAME}=${stage}; path=/; max-age=2592000; samesite=lax`;
+}
 
 export default function LoginPage() {
 	const router = useRouter();
-	const [environment, setEnvironment] = useState("qa");
+	const [environment, setEnvironment] = useState<EdtrStage>("qa");
+
+	useEffect(() => {
+		setStageCookie(environment);
+	}, [environment]);
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
@@ -67,20 +76,26 @@ export default function LoginPage() {
 					</div>
 				)}
 
-				{/* Environment Dropdown */}
+				{/* Environment Dropdown – dictates /edtr/{stage}/db-credentials */}
 				<div>
 					<label className="block text-sm font-medium mb-1">
 						Environment
 					</label>
 					<select
 						value={environment}
-						onChange={(e) => setEnvironment(e.target.value)}
+						onChange={(e) => {
+							const stage = e.target.value as EdtrStage;
+							setEnvironment(stage);
+							setStageCookie(stage);
+						}}
 						className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
 						disabled={isLoading}
 					>
-					<option value="qa">QA</option>
-					<option value="dev">Development</option>
-					<option value="prod">Production</option>
+						{EDTR_STAGES.map((stage) => (
+							<option key={stage} value={stage}>
+								{STAGE_LABELS[stage]}
+							</option>
+						))}
 					</select>
 				</div>
 

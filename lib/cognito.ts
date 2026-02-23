@@ -3,20 +3,61 @@ import {
   CognitoUser,
   AuthenticationDetails,
 } from "amazon-cognito-identity-js";
+import { type EdtrStage } from "./edtr-stage-constants";
 
-// Cognito configuration
+const COGNITO_REGION =
+  process.env.AWS_REGION || process.env.NEXT_PUBLIC_AWS_REGION || "ap-southeast-1";
+
+const ENV_KEYS: Record<EdtrStage, { userPoolId: string; clientId: string }> = {
+  dev: {
+    userPoolId: "DEV_COGNITO_USER_POOL_ID",
+    clientId: "DEV_COGNITO_CLIENT_ID",
+  },
+  qa: {
+    userPoolId: "QA_COGNITO_USER_POOL_ID",
+    clientId: "QA_COGNITO_CLIENT_ID",
+  },
+  uat: {
+    userPoolId: "UAT_COGNITO_USER_POOL_ID",
+    clientId: "UAT_COGNITO_CLIENT_ID",
+  },
+  prod: {
+    userPoolId: "PROD_COGNITO_USER_POOL_ID",
+    clientId: "PROD_COGNITO_CLIENT_ID",
+  },
+};
+
+export function getCognitoConfigForStage(stage: EdtrStage): {
+  region: string;
+  userPoolId: string;
+  clientId: string;
+} {
+  const keys = ENV_KEYS[stage];
+  const userPoolId = process.env[keys.userPoolId] ?? "";
+  const clientId = process.env[keys.clientId] ?? "";
+  return {
+    region: COGNITO_REGION,
+    userPoolId,
+    clientId,
+  };
+}
+
+// Legacy single config: uses dev env vars
 export const cognitoConfig = {
-  region: process.env.AWS_REGION || process.env.NEXT_PUBLIC_AWS_REGION || "us-east-1",
-  userPoolId: process.env.COGNITO_USER_POOL_ID || process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID || "",
-  clientId: process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID || "",
+  region: COGNITO_REGION,
+  userPoolId: process.env.DEV_COGNITO_USER_POOL_ID ?? process.env.COGNITO_USER_POOL_ID ?? "",
+  clientId: process.env.DEV_COGNITO_CLIENT_ID ?? process.env.COGNITO_CLIENT_ID ?? "",
 };
 
 /**
- * Authenticate user with username and password using SRP (Secure Remote Password) flow
- * This is the default authentication flow and doesn't require admin permissions
- * or enabling USER_PASSWORD_AUTH on the client
+ * Authenticate user with username and password using SRP (Secure Remote Password) flow.
+ * Uses the Cognito User Pool and App Client for the given stage (dev | qa | uat | prod).
  */
-export async function authenticateUser(username: string, password: string): Promise<{
+export async function authenticateUser(
+  username: string,
+  password: string,
+  stage: EdtrStage = "dev"
+): Promise<{
   success: boolean;
   accessToken?: string;
   idToken?: string;
@@ -24,19 +65,20 @@ export async function authenticateUser(username: string, password: string): Prom
   expiresIn?: number;
   error?: string;
 }> {
+  const config = getCognitoConfigForStage(stage);
   return new Promise((resolve) => {
     try {
-      if (!cognitoConfig.userPoolId || !cognitoConfig.clientId) {
+      if (!config.userPoolId || !config.clientId) {
         resolve({
           success: false,
-          error: "Cognito configuration is missing. Please set COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID",
+          error: "Cognito configuration is missing for this environment.",
         });
         return;
       }
 
       const poolData = {
-        UserPoolId: cognitoConfig.userPoolId,
-        ClientId: cognitoConfig.clientId,
+        UserPoolId: config.userPoolId,
+        ClientId: config.clientId,
       };
 
       const userPool = new CognitoUserPool(poolData);

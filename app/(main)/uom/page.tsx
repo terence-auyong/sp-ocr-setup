@@ -15,6 +15,7 @@ const UomOcr = () => {
 	} = useQuery<Uom[]>({
 		queryKey: ['uom'],
 		queryFn: fetchUom,
+		staleTime: 0,
 	});
 
 	const [selectedUom, setSelectedUom] = useState<Uom | null>(null);

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.995.0",
+    "@aws-sdk/client-ssm": "^3.995.0",
     "@tanstack/react-query": "^5.90.20",
     "amazon-cognito-identity-js": "^6.3.16",
     "axios": "^1.13.4",
