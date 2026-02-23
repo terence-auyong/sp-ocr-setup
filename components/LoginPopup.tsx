@@ -3,21 +3,75 @@ import { LuX } from "react-icons/lu";
 
 type DbCredentialsProps = {
     onClose: () => void;
+    onLoginSuccess?: (tokens: { accessToken: string; idToken: string }) => void;
 }
 
 type Environment = "QA" | "Development" | "Production";
 
-const DbCredentials = ({onClose}: DbCredentialsProps) => {
+const DbCredentials = ({onClose, onLoginSuccess}: DbCredentialsProps) => {
     const [isShowPassword, setIsShowPassword] = useState(false);
     const [selectedEnv, setSelectEnv] = useState<Environment | string>("");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const environment= [
         {id: 1, name: "QA" },
         {id: 2, name: "Development"},
         {id: 3, name: "Production"}
     ];
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        
+        if (!username || !password) {
+            setError("Please enter both username and password");
+            return;
+        }
+
+        setIsLoading(true);
+
+        try {
+            const response = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ username, password }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || "Login failed");
+            }
+
+            if (data.success && data.accessToken && data.idToken) {
+                // Store tokens in localStorage (or you can use a more secure method)
+                localStorage.setItem("accessToken", data.accessToken);
+                localStorage.setItem("idToken", data.idToken);
+                
+                // Call success callback if provided
+                if (onLoginSuccess) {
+                    onLoginSuccess({
+                        accessToken: data.accessToken,
+                        idToken: data.idToken,
+                    });
+                }
+                
+                // Close the popup
+                onClose();
+            } else {
+                throw new Error("Invalid response from server");
+            }
+        } catch (err: any) {
+            setError(err.message || "An error occurred during login");
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
   return (
     <div className="fixed inset-0 z-50">
@@ -30,56 +84,77 @@ const DbCredentials = ({onClose}: DbCredentialsProps) => {
                 <button 
                     className="p-1 rounded-full hover:bg-gray-300"
                     onClick={onClose}
+                    disabled={isLoading}
                 >
                     <LuX size={20} color="gray"/>
                 </button>
             </div>
             
-            <div className="flex flex-col items-center gap-4 w-full">
-                <div>
-                    <p>Environment</p>
-                    <select 
-                        className="h-8 w-80 bg-gray-200 rounded"
-                        onChange={(e) => setSelectEnv(e.target.value)}
-                    >
-                        <option value="">Select an option</option>
-                        {environment.map((env) => (
-                            <option key={env.id} value={env.name}>
-                                {env.name}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-                <div>
-                    <p>Username</p>
-                    <input 
-                        className="h-8 w-80 px-2 bg-gray-200 rounded" 
-                        type="text" 
-                        onChange={(e) => setUsername(e.target.value)}
-                    />
-                </div>
-                <div>
-                    <div className="flex justify-between">
-                        <p>Password</p>
-                        <button 
-                            className="text-sm text-blue-400 hover:underline cursor-pointer"
-                            onClick={() => setIsShowPassword(prev => !prev)}
-                        >
-                            {isShowPassword ? "Hide" : "Show"}
-                        </button>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                {error && (
+                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded text-sm">
+                        {error}
                     </div>
-                    <input 
-                        className="h-8 w-80 px-2 bg-gray-200 rounded" 
-                        type={isShowPassword ? "text" : "password"}
-                        onChange={(e) => setPassword(e.target.value)}
-                    />
-                </div> 
-            </div>
-            <div className="flex justify-end">
-                <button className="bg-blue-300 rounded p-1 hover:bg-blue-400">
-                    Submit
-                </button>
-            </div>
+                )}
+                
+                <div className="flex flex-col items-center gap-4 w-full">
+                    <div>
+                        <p>Environment</p>
+                        <select 
+                            className="h-8 w-80 bg-gray-200 rounded"
+                            value={selectedEnv}
+                            onChange={(e) => setSelectEnv(e.target.value)}
+                        >
+                            <option value="">Select an option</option>
+                            {environment.map((env) => (
+                                <option key={env.id} value={env.name}>
+                                    {env.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <p>Username</p>
+                        <input 
+                            className="h-8 w-80 px-2 bg-gray-200 rounded" 
+                            type="text" 
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                            disabled={isLoading}
+                        />
+                    </div>
+                    <div>
+                        <div className="flex justify-between">
+                            <p>Password</p>
+                            <button 
+                                type="button"
+                                className="text-sm text-blue-400 hover:underline cursor-pointer"
+                                onClick={() => setIsShowPassword(prev => !prev)}
+                            >
+                                {isShowPassword ? "Hide" : "Show"}
+                            </button>
+                        </div>
+                        <input 
+                            className="h-8 w-80 px-2 bg-gray-200 rounded" 
+                            type={isShowPassword ? "text" : "password"}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            disabled={isLoading}
+                        />
+                    </div> 
+                </div>
+                <div className="flex justify-end">
+                    <button 
+                        type="submit"
+                        className="bg-blue-300 rounded p-1 hover:bg-blue-400 disabled:bg-gray-300 disabled:cursor-not-allowed min-w-[80px]"
+                        disabled={isLoading}
+                    >
+                        {isLoading ? "Loading..." : "Submit"}
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
     
