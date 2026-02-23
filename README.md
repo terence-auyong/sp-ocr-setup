@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Features
+
+- AWS Cognito authentication with username/password
+- JWT token-based API protection
+- User verification and authorization
+
 ## Getting Started
 
 First, run the development server:
@@ -28,6 +34,16 @@ To learn more about Next.js, take a look at the following resources:
 - [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Authentication
+
+This application uses AWS Cognito for authentication. See [AUTH.md](./AUTH.md) for complete documentation on:
+
+- Setting up Cognito authentication
+- Using login components
+- Protecting API routes
+- Verifying users in the backend
+- Token management
 
 ## Deploy on Vercel
 
