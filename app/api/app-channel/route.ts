@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { getPool } from "@/lib/db";
 
 export const GET = async (req: NextRequest) => {
+    const pool = await getPool(req);
     try {
         const [rows] = await pool.query(
             `SELECT id, code, name FROM app_channel`

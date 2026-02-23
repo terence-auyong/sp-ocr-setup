@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/cognito";
+import { getStageFromRequest } from "@/lib/stage";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +14,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await authenticateUser(username, password);
+    const stage = getStageFromRequest(req);
+    const result = await authenticateUser(username, password, stage);
 
     if (!result.success) {
       return NextResponse.json(

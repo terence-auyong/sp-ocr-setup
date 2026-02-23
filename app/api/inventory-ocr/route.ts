@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { getPool } from "@/lib/db";
 
 type AreaUpdate = {
   areaName: string;
@@ -14,6 +14,7 @@ type RequestBody = {
 };
 
 export async function POST(req: NextRequest) {
+  const pool = await getPool(req);
   const conn = await pool.getConnection();
   
   try {

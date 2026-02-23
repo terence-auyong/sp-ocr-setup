@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import mysql, { ResultSetHeader } from "mysql2/promise";
-import { pool } from "@/lib/db";
+import { getPool } from "@/lib/db";
 
 export const POST = async (req: NextRequest) => {
+	const pool = await getPool(req);
 	const conn = await pool.getConnection();
 
 	try {
