@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { StoredUser } from "@/lib/auth-storage";
+import { LogOut } from 'lucide-react';
 
 type SidebarItem = {
   label: string;
@@ -28,54 +29,38 @@ export default function Sidebar({ items, user, environment, setShowLogin, onLogo
   };
 
   return (
-    <aside className="w-64 h-screen bg-[#FAFAFA] text-black flex flex-col p-4">
-
-      {/* Account Section: logged-in name + env + Logout, or Login */}
-      <div className="pb-4 border-b border-gray-200 mb-4 rounded">
+    <aside className="w-64 h-screen bg-[#FAFAFA] text-black flex flex-col p-4 border-r border-gray-200">
+      
+      {/* TOP SECTION: User Info */}
+      <div className="pb-4 border-b border-gray-200 mb-4">
         {user ? (
           <>
-            <div className="font-semibold text-lg">{user.displayName}</div>
+            <div className="font-semibold text-lg truncate" title={user.displayName}>
+                {user.displayName}
+            </div>
             {user.schemaName && (
               <div className="text-sm text-gray-600 mt-0.5">Schema: {user.schemaName}</div>
             )}
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span
-                className={`inline-block px-3 py-1 text-xs font-semibold rounded-full uppercase ${envColors[environment]}`}
-              >
+            <div className="mt-2">
+              <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full uppercase ${envColors[environment]}`}>
                 {environment}
               </span>
-              <button
-                type="button"
-                onClick={onLogout}
-                className="text-sm text-gray-600 hover:text-gray-900 hover:underline"
-              >
-                Logout
-              </button>
             </div>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={() => setShowLogin(true)}
-            className="w-full text-left font-semibold text-lg text-blue-600 hover:text-blue-800 hover:underline"
-          >
-            Login
-          </button>
+          <div className="text-sm text-gray-500 italic">Not logged in</div>
         )}
       </div>
 
-      {/* Navigation */}
-      <nav className="flex flex-col space-y-1">
+      {/* MIDDLE SECTION: Navigation (Grows to fill space) */}
+      <nav className="flex flex-col space-y-1 flex-grow">
         {items.map((item) => {
           const isActive = pathname === item.href;
           const disabled = item.requiresAuth && !user;
+          
           if (disabled) {
             return (
-              <span
-                key={item.href}
-                className="p-4 rounded text-gray-400 cursor-not-allowed"
-                title="Log in to access"
-              >
+              <span key={item.href} className="p-3 rounded text-gray-400 cursor-not-allowed">
                 {item.label}
               </span>
             );
@@ -84,10 +69,8 @@ export default function Sidebar({ items, user, environment, setShowLogin, onLogo
             <Link
               key={item.href}
               href={item.href}
-              className={`p-4 rounded transition ${
-                isActive
-                  ? "bg-blue-500 font-bold text-white"
-                  : "hover:bg-gray-200"
+              className={`p-3 rounded transition ${
+                isActive ? "bg-blue-500 font-bold text-white" : "hover:bg-gray-200"
               }`}
             >
               {item.label}
@@ -96,6 +79,19 @@ export default function Sidebar({ items, user, environment, setShowLogin, onLogo
         })}
       </nav>
 
+      {/* Logout Button */}
+      {user && (
+        <div className="pt-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full flex items-center justify-center gap-2 p-3 text-sm font-medium text-red-600 hover:bg-red-50 rounded transition"
+          >
+            <LogOut size={18}/>
+            Logout
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
