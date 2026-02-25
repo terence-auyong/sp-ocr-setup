@@ -79,7 +79,7 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
     };
 
   return (
-    <div className="flex flex-col items-center justify-center gap-4 pt-8 h-208 w-full rounded">
+    <div className="flex flex-col items-center justify-center gap-4 h-full w-full rounded">
         <div className="w-120 font-bold">
             <p className="text-xl">Add OCR Templates</p>
         </div>

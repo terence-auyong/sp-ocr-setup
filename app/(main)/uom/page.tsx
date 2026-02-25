@@ -68,7 +68,7 @@ const UomOcr = () => {
 	};
 
   return (
-    <div className="flex gap-4 h-224 w-320 rounded border-b border-gray-300 bg-[#FAFAFA] p-4">
+    <div className="flex gap-4 lg:h-200 lg:w-280 2xl:h-224 2xl:w-320 rounded border-b border-gray-300 bg-[#FAFAFA] p-4">
             {showPreview && (
                 <PreviewUom 
                     onClose={() => setShowPreview(false)}

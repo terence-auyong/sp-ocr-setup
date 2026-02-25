@@ -24,7 +24,7 @@ type AppStepperProps = {
 
 export default function AppStepper({ steps, currentStep, setCurrentStep }: AppStepperProps) {  
   return (
-    <Stepper value={currentStep} className="space-y-8">
+    <Stepper value={currentStep} className='h-full flex flex-col'>
         <StepperNav>
             {steps.map((step, index) => (
             <StepperItem key={step.value} step={step.value}>
@@ -45,10 +45,10 @@ export default function AppStepper({ steps, currentStep, setCurrentStep }: AppSt
             ))}
         </StepperNav>
 
-        <StepperPanel className="text-sm">
+        <StepperPanel className="flex-1 min-h-0 text-sm">
             {steps.map((step) => (
             <StepperContent 
-                className="w-full min-h-full" 
+                className="h-full flex justify-center items-center" 
                 key={step.value} 
                 value={step.value}
             >

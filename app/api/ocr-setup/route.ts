@@ -68,8 +68,8 @@ export const POST = async (req: NextRequest) => {
 			);
 		}
 
-		const storeId = store?.id || null;
-		const channelId = channel?.id || null;
+		const storeId = store?.id || 0;
+		const channelId = channel?.id || 0;
 
 		const [existing] = await conn.execute(
 			`SELECT id FROM app_ocr_mapping 

@@ -53,14 +53,14 @@ export default function Sidebar({ items, user, environment, setShowLogin, onLogo
       </div>
 
       {/* MIDDLE SECTION: Navigation (Grows to fill space) */}
-      <nav className="flex flex-col space-y-1 flex-grow">
+      <nav className="flex flex-col flex-grow">
         {items.map((item) => {
           const isActive = pathname === item.href;
           const disabled = item.requiresAuth && !user;
           
           if (disabled) {
             return (
-              <span key={item.href} className="p-3 rounded text-gray-400 cursor-not-allowed">
+              <span key={item.href} className="p-4 rounded text-gray-400 cursor-not-allowed">
                 {item.label}
               </span>
             );
@@ -69,8 +69,8 @@ export default function Sidebar({ items, user, environment, setShowLogin, onLogo
             <Link
               key={item.href}
               href={item.href}
-              className={`p-3 rounded transition ${
-                isActive ? "bg-blue-500 font-bold text-white" : "hover:bg-gray-200"
+              className={`p-4 rounded transition ${
+                isActive ? "bg-blue-300 font-bold text-white" : "hover:bg-gray-200"
               }`}
             >
               {item.label}

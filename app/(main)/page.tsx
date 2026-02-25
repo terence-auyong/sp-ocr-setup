@@ -50,7 +50,7 @@ const page = () => {
 	return (
 		<OcrTemplateProvider>
 			<div className='flex justify-center items-center h-screen w-full bg-gray-200'>
-				<div className="bg-[#FAFAFA] rounded p-4 h-224 w-320">
+				<div className="bg-[#FAFAFA] rounded p-4 lg:h-200 lg:w-280 2xl:h-224 2xl:w-320">
 					<AppStepper steps={steps} currentStep={currentStep} setCurrentStep={setCurrentStep}/>
 				</div>
 			</div>
