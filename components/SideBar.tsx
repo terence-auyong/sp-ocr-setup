@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { StoredUser } from "@/lib/auth-storage";
-import { LogOut } from 'lucide-react';
+import { LogOut, Database, User } from 'lucide-react';
 
 type SidebarItem = {
   label: string;
@@ -35,11 +35,15 @@ export default function Sidebar({ items, user, environment, setShowLogin, onLogo
       <div className="pb-4 border-b border-gray-200 mb-4">
         {user ? (
           <>
-            <div className="font-semibold text-lg truncate" title={user.displayName}>
-                {user.displayName}
+            <div className="flex items-center gap-2 font-semibold truncate" title={user.displayName}>
+              <User size={20} color="gray"/>
+              {user.displayName}
             </div>
             {user.schemaName && (
-              <div className="text-sm text-gray-600 mt-0.5">Schema: {user.schemaName}</div>
+              <div className="flex items-center gap-2 text-sm text-gray-600 mt-0.5">
+                <Database size={20} color="gray"/>
+                {user.schemaName}
+              </div>
             )}
             <div className="mt-2">
               <span className={`inline-block px-3 py-1 text-xs font-semibold rounded-full uppercase ${envColors[environment]}`}>
@@ -70,7 +74,7 @@ export default function Sidebar({ items, user, environment, setShowLogin, onLogo
               key={item.href}
               href={item.href}
               className={`p-4 rounded transition ${
-                isActive ? "bg-blue-300 font-bold text-white" : "hover:bg-gray-200"
+                isActive ? "bg-blue-300 font-bold text-white" : "hover:bg-gray-100"
               }`}
             >
               {item.label}

@@ -4,7 +4,6 @@ import AppStepper from '../../components/stepper/AppStepper';
 import AddOcrTemplate from '../../components/stepper/steps/AddOcrTemplate';
 import StoreChannel from '../../components/stepper/steps/StoreChannel';
 import ModuleCode from '../../components/stepper/steps/ModuleCode';
-import SetStoreUsageLimits from '../../components/stepper/steps/SetStoreUsageLimits';
 import { OcrTemplateProvider } from '../../contexts/OcrTemplateContexts';
 
 const page = () => {
@@ -38,19 +37,12 @@ const page = () => {
 				stepsLength={6}
 			/>
 		},
-		{ 
-			value: 4, 
-			content: 
-			<SetStoreUsageLimits 
-				setCurrentStep={setCurrentStep}
-			/>
-		}
 	];
 
 	return (
 		<OcrTemplateProvider>
 			<div className='flex justify-center items-center h-screen w-full bg-gray-200'>
-				<div className="bg-[#FAFAFA] rounded p-4 lg:h-200 lg:w-280 2xl:h-224 2xl:w-320">
+				<div className="bg-[#FAFAFA] rounded-sm p-4 lg:h-200 lg:w-280 2xl:h-224 2xl:w-320">
 					<AppStepper steps={steps} currentStep={currentStep} setCurrentStep={setCurrentStep}/>
 				</div>
 			</div>

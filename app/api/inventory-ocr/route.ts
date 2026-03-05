@@ -128,37 +128,60 @@ export async function POST(req: NextRequest) {
         throw new Error("OCR_CODE config not found");
       }
 
+      // Record already exists 
       if (area.ocr_code_status === 1) {
-        // Record already exists 
-        await conn.execute(
-          `UPDATE app_inv_area_store_type_config_mapping
-           SET
-             value = ?,
-             status = 1,
-             version = ?,
-             modified_by = 'root'
-           WHERE
-             type_id = ?
-             AND inv_area_store_group_id = ?
-             AND type_config_id = ?`,
-          [area.ocrCode, newVersion, inventoryAreaId, inventoryGroupId, ocrCodeConfig.id]
-        );
+        
+        // User just unchecked — only update status and version
+        if (area.ocr_area_status === 0) {
+          await conn.execute(
+              `UPDATE app_inv_area_store_type_config_mapping
+              SET
+                status = 0,
+                version = ?,
+                modified_by = 'root'
+              WHERE
+                type_id = ?
+                AND inv_area_store_group_id = ?
+                AND type_config_id = ?`,
+              [newVersion, inventoryAreaId, inventoryGroupId, ocrCodeConfig.id]
+          );
+        } else {
+            // Record exists and is active — update value, status, and version
+            await conn.execute(
+                `UPDATE app_inv_area_store_type_config_mapping
+                SET
+                  value = ?,
+                  status = ?,
+                  version = ?,
+                  modified_by = 'root'
+                WHERE
+                  type_id = ?
+                  AND inv_area_store_group_id = ?
+                  AND type_config_id = ?`,
+                [area.ocrCode, area.ocr_area_status, newVersion, inventoryAreaId, inventoryGroupId, ocrCodeConfig.id]
+            );
+        }
       } else {
-        // Record does not exist yet
-        await conn.execute(
-          `INSERT INTO app_inv_area_store_type_config_mapping (
-             type_id,
-             inv_area_store_group_id,
-             type_config_id,
-             value,
-             status,
-             version,
-             created_date,
-             modified_by
-           )
-           VALUES (?, ?, ?, ?, 1, ?, NOW(), 'root')`,
-          [inventoryAreaId, inventoryGroupId, ocrCodeConfig.id, area.ocrCode, newVersion]
-        );
+          // Record may not exist, or exists but disabled — upsert to be safe
+          await conn.execute(
+              `INSERT INTO app_inv_area_store_type_config_mapping (
+                  type_id,
+                  inv_area_store_group_id,
+                  type_config_id,
+                  value,
+                  status,
+                  version,
+                  created_date,
+                  modified_by
+              )
+              VALUES (?, ?, ?, ?, ?, ?, NOW(), 'root')
+              ON DUPLICATE KEY UPDATE
+                  value = VALUES(value),
+                  status = VALUES(status),
+                  version = VALUES(version),
+                  modified_by = 'root'`,
+              [inventoryAreaId, inventoryGroupId, ocrCodeConfig.id, area.ocrCode, area.ocr_area_status, newVersion]
+          );
       }
     }
 

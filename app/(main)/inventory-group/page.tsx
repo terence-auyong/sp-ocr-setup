@@ -4,9 +4,11 @@ import Spinner from '@/components/Spinner';
 import { fetchInventoryArea, fetchInventoryGroup } from '@/services/inventory';
 import PreviewInventoryGroup from '@/components/PreviewInventoryGroup';
 import { useQuery } from '@tanstack/react-query';
+import { LuSearch } from 'react-icons/lu';
 
 const page = () => {
     const [searchTerm, setSearchTerm] = useState(""); 
+    const [areaSearchTerm, setAreaSearchTerm] = useState("");
 
     const {
         data: inventoryGroup,
@@ -67,10 +69,16 @@ const page = () => {
         item.inventory_group_code.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    const filteredAreas = selectedInventoryGroup?.areas.filter(area => 
+        area.inventory_area.toLowerCase().includes(areaSearchTerm.toLowerCase())
+    ) ?? [];
+
     // Initialize areaData based on ocr_area_status when selectedInventoryGroup changes
     useEffect(() => {
         if (!selectedInventoryGroup) return;
-
+        
+        setAreaSearchTerm(""); 
+        
         const initialAreaData: AreaDataState = {};
         selectedInventoryGroup.areas.forEach(area => {
             initialAreaData[area.inventory_area] = {
@@ -86,15 +94,18 @@ const page = () => {
     }, [selectedInventoryGroup]);
 
     const handleCheckboxChange = (key: string, ocr_area_status: number, ocr_code_status: number) => {
-        setAreaData(prev => ({
-            ...prev,
-            [key]: {
-                checked: !(prev[key]?.checked ?? false),
-                ocrCode: prev[key]?.ocrCode ?? "",
-                ocr_area_status,
-                ocr_code_status,
+        setAreaData(prev => {
+            const newChecked = !(prev[key]?.checked ?? false);
+            return {
+                ...prev,
+                [key]: {
+                    checked: !(prev[key]?.checked ?? false),
+                    ocrCode: prev[key]?.ocrCode ?? "",
+                    ocr_area_status: newChecked ? 1 : 0,
+                    ocr_code_status,
+                }
             }
-        }));
+        });
     };
 
     const handleOcrCodeChange = (key: string, value: string, ocr_area_status: number, ocr_code_status: number) => {
@@ -103,7 +114,7 @@ const page = () => {
             [key]: {
                 checked: prev[key]?.checked ?? false,
                 ocrCode: value,
-                ocr_area_status,
+                ocr_area_status: prev[key]?.ocr_area_status ?? 0,
                 ocr_code_status,
                 error: false,
                 duplicate: false,
@@ -153,16 +164,22 @@ const page = () => {
         }
 
         const changed: AreaDataState = {};
-        Object.entries(areaData).forEach(([key, value]) => {
-            const original = originalAreaData.current[key];
-            const hasChanged = 
-                value.checked !== original?.checked ||
-                value.ocrCode !== original?.ocrCode;
+            Object.entries(areaData).forEach(([key, value]) => {
+                const original = originalAreaData.current[key];
+                
+                const isCheckedDifferent = value.checked !== original?.checked;
+                const isCodeDifferent = value.ocrCode !== original?.ocrCode;
 
-            if (hasChanged) {
-                changed[key] = value;
-            }
-        });
+                if (isCheckedDifferent || isCodeDifferent) {
+                    changed[key] = { 
+                        ...value,
+                        changedFields: {
+                            status: isCheckedDifferent,
+                            code: isCodeDifferent,
+                        }
+                    };
+                }
+            });
 
         if (Object.keys(changed).length === 0) {
             alert("No changes detected.");
@@ -183,7 +200,7 @@ const page = () => {
     };
 
     return (
-        <div className="flex flex-col gap-4 lg:h-200 lg:w-280 2xl:h-224 2xl:w-320 rounded border-b border-gray-300 bg-[#FAFAFA] p-4">
+        <div className="flex flex-col gap-4 lg:h-200 lg:w-280 2xl:h-224 2xl:w-320 rounded-sm border-b border-gray-300 bg-[#FAFAFA] p-4">
             {showPreview && (
                 <PreviewInventoryGroup 
                     onClose={() => setShowPreview(false)}
@@ -194,25 +211,28 @@ const page = () => {
                 />
             )}
             <div className="flex flex-1 gap-4 overflow-hidden">
-                <div className="h-full flex flex-col">
-                    <input 
-                        type="text" 
-                        placeholder="Search..." 
-                        className="h-12 w-64 mb-4 bg-gray-200 p-2 rounded" 
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
+                <div className="h-full flex flex-col border-r border-gray-200 pr-4">
+                    <div className="flex items-center bg-gray-100 rounded gap-2 pl-2 mb-4">
+                        <LuSearch size={20} color="gray"/>
+                        <input 
+                            type="text" 
+                            placeholder="Search..." 
+                            className="h-12 w-64 focus:outline-none p-2" 
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
                     <p className="text-gray-400 mb-2">{results.length} items</p>
-                    <div className="flex-1 overflow-auto relative">
+                    <div className="flex-1 overflow-auto relative hide-scrollbar">
                         {loadingGroups ? (
                             <div className="flex justify-center items-center h-full w-full">
-                                <Spinner/>
+                                <Spinner />
                             </div>
                         ) : filteredItems.length > 0 ? (
                             filteredItems.map((item) => (
                                 <div 
                                     key={item.id}  
-                                    className={`flex justify-center items-center h-16 w-64 cursor-pointer rounded
-                                        ${selectedInventoryGroup?.id === item.id ? "bg-blue-300 text-white font-bold" : "hover:bg-gray-200"}`}
+                                    className={`flex justify-center items-center h-16 w-full cursor-pointer rounded
+                                        ${selectedInventoryGroup?.id === item.id ? "bg-blue-300 text-white font-bold" : "hover:bg-gray-100"}`}
                                     onClick={() => setSelectedInventoryGroup(item)}
                                 >
                                     <span className="truncate w-full text-center">
@@ -231,87 +251,88 @@ const page = () => {
                     <div className="h-full flex flex-col flex-1 rounded">
                         {selectedInventoryGroup ? (
                             <div className="h-full flex flex-col">
-                                <div className="mb-4">
-                                    <p className="text-lg">Inventory Group</p>
-                                    <h1 className="font-bold text-2xl">
-                                        {selectedInventoryGroup?.inventory_group_code}
-                                    </h1>
-                                </div>
-                                <div className="flex-1 flex flex-col min-h-0 border border-gray-300 rounded">
+                                <div className="flex justify-between mb-4">
                                     <div>
-                                        <table className="w-full">
-                                            <thead>
-                                                <tr className="h-12 border-b border-gray-300">
-                                                    <th className="w-1/3 text-center">Inventory Area</th>
-                                                    <th className="w-1/3 text-center">OCR Area</th>
-                                                    <th className="w-1/3 text-center">OCR Code</th>
+                                        <p className="">Inventory Group</p>
+                                        <h1 className="font-bold text-2xl">
+                                            {selectedInventoryGroup?.inventory_group_code}
+                                        </h1>
+                                    </div>
+                                    <div className="flex items-center bg-gray-100 rounded gap-2 pl-2 h-12">
+                                        <LuSearch size={20} color="gray"/>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Search Areas..." 
+                                            className="h-full w-64 p-2 focus:outline-none"
+                                            value={areaSearchTerm}
+                                            onChange={(e) => setAreaSearchTerm(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-auto rounded">
+                                    <table className="w-full table-fixed border-collapse">
+                                        <thead className="sticky top-0 z-10 bg-gray-100">
+                                            <tr className="h-12">
+                                                <th className="w-[10%] text-center">No.</th>
+                                                <th className="w-[30%] text-center">Inventory Area</th>
+                                                <th className="w-[30%] text-center">OCR Area</th>
+                                                <th className="w-[30%] text-center">OCR Code</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {selectedInventoryGroup.areas.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={4} className="text-center text-gray-400 py-10">
+                                                        No Inventory Areas Available
+                                                    </td>
                                                 </tr>
-                                            </thead>
-                                        </table>
-                                    </div>
-                                    <div className="flex-1 overflow-auto">
-                                        <table className="w-full">
-                                            <tbody>
-                                                {selectedInventoryGroup.areas.length === 0 ? (
-                                                    <tr>
-                                                        <td className="flex items-center justify-center text-gray-400 text-lg mt-32">
-                                                            No Inventory Areas Available
-                                                        </td>                                               
-                                                    </tr>
-                                                ) : (
-                                                    selectedInventoryGroup.areas.map((area) => { 
-                                                        const key = area.inventory_area;
-                                                        return (
-                                                            <tr key={key} className="h-16 bg-[#FAFAFA] border-b border-gray-300">
-                                                                <td className="w-1/3 text-center">
-                                                                    {area.inventory_area}
-                                                                </td>
-                                                                <td className="w-1/3 text-center">
-                                                                    <input 
-                                                                        type="checkbox" 
-                                                                        className="h-4 w-4"
-                                                                        checked={areaData[key]?.checked ?? false}
-                                                                        onChange={() => handleCheckboxChange(key, area.ocr_area_status, area.ocr_code_status)}
-                                                                    />
-                                                                </td>
-                                                                <td className="w-1/3 text-center">
-                                                                    <input 
-                                                                        type="text" 
-                                                                        className={`w-40 p-1 rounded 
-                                                                            ${!areaData[key]?.checked ? "bg-gray-300 cursor-not-allowed" : "bg-gray-200"}
-                                                                            ${areaData[key]?.error || areaData[key]?.duplicate ? "border-2 border-red-400" : ""}
-                                                                        `}
-                                                                        disabled={!areaData[key]?.checked}
-                                                                        maxLength={3}
-                                                                        value={areaData[key]?.ocrCode ?? ""} 
-                                                                        onChange={(e) => {
-                                                                            const value = e.target.value.replace(/[^a-zA-Z0-9]/g, "");
-                                                                            handleOcrCodeChange(key, value, area.ocr_area_status, area.ocr_code_status);
-                                                                        }}
-                                                                    />
-                                                                    {areaData[key]?.error && (
-                                                                        <p className="text-red-500 text-xs mt-1">
-                                                                            This field is required
-                                                                        </p>
-                                                                    )}                                                                  
-                                                                </td>
-                                                            </tr>
-                                                        )
-                                                    })
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                            ) : (
+                                                filteredAreas.map((area, index) => {
+                                                    const key = area.inventory_area;
+                                                    return (
+                                                        <tr key={key} className="h-16 bg-[#FAFAFA] border-b border-gray-300 hover:bg-gray-100 cursor-pointer">
+                                                            <td className="w-[10%] text-center text-gray-400">{index + 1}</td>
+                                                            <td className="w-[30%] text-center">{area.inventory_area}</td>
+                                                            <td className="w-[30%] text-center">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    className="h-4 w-4 cursor-pointer"
+                                                                    checked={areaData[key]?.checked ?? false}
+                                                                    onChange={() => handleCheckboxChange(key, area.ocr_area_status, area.ocr_code_status)}
+                                                                />
+                                                            </td>
+                                                            <td className="w-[30%] text-center">
+                                                                <input 
+                                                                    type="text" 
+                                                                    className={`w-32 p-1 rounded text-center
+                                                                        ${!areaData[key]?.checked ? "bg-gray-200 cursor-not-allowed" : "border border-gray-300 bg-white"}
+                                                                        ${areaData[key]?.error || areaData[key]?.duplicate ? "border-2 border-red-400" : ""}
+                                                                    `}
+                                                                    disabled={!areaData[key]?.checked}
+                                                                    maxLength={3}
+                                                                    value={areaData[key]?.ocrCode ?? ""} 
+                                                                    onChange={(e) => {
+                                                                        const value = e.target.value.replace(/[^a-zA-Z0-9]/g, "");
+                                                                        handleOcrCodeChange(key, value, area.ocr_area_status, area.ocr_code_status);
+                                                                    }}
+                                                                />
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
                                 <div className="flex items-center justify-end pt-4 gap-4">
                                     <button 
-                                        className="bg-gray-200 hover:bg-gray-300 w-40 h-12 rounded"
+                                        className="bg-gray-200 hover:bg-gray-300 w-32 h-12 rounded"
                                         onClick={clearArea}
                                     >
                                         Clear
                                     </button>
                                     <button 
-                                        className="bg-blue-300 hover:bg-blue-400 w-40 h-12 rounded text-white font-bold"
+                                        className="bg-blue-300 hover:bg-blue-400 w-32 h-12 rounded text-white font-bold"
                                         onClick={handlePreview}
                                     >
                                         Submit

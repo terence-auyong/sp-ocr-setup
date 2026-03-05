@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react';
+import { useState } from 'react';
 import { LuCircleCheckBig } from "react-icons/lu";
 import { generateInvScript } from '@/utils/scripts';
 import { submitInventoryOcr } from '@/services/inventory-ocr';
@@ -24,7 +24,6 @@ const PreviewInventoryGroup = ({ onClose, areaData, inventoryGroupCode, clearAre
             setLoadingSubmit(true);
 
             const areas = Object.entries(areaData)
-                .filter(([_, value]) => value.checked)
                 .map(([areaName, data]) => ({
                     areaName,
                     ocrCode: data.ocrCode,
@@ -32,10 +31,11 @@ const PreviewInventoryGroup = ({ onClose, areaData, inventoryGroupCode, clearAre
                     ocr_code_status: data.ocr_code_status
                 }));
 
-            await submitInventoryOcr({
-                inventoryGroupCode,
-                areas,
-            });
+            const payload = {inventoryGroupCode, areas};
+
+            console.log("payload: ", payload)
+
+            await submitInventoryOcr(payload);
 
             setLoadingSubmit(false);
             setShowSuccess(true);
@@ -79,7 +79,7 @@ const PreviewInventoryGroup = ({ onClose, areaData, inventoryGroupCode, clearAre
                     </div>
                 </div>
             )}
-            <div className="flex flex-col gap-4 h-full w-96">
+            <div className="flex flex-col gap-4 h-full w-144">
                 <div className="flex flex-col mb-4">
                     <h2 className="text-lg font-bold">Inventory Group OCR</h2>
                     <button
@@ -96,30 +96,40 @@ const PreviewInventoryGroup = ({ onClose, areaData, inventoryGroupCode, clearAre
                         <p className="text-gray-600">{inventoryGroupCode}</p>
                     </div>
 
-                    <div>
-                        {/* Header */}
-                        <div className="grid grid-cols-2 font-semibold text-sm pb-4">
-                            <span>Area</span>
-                            <span>OCR Code</span>
-                        </div>
-
-                        {/* Rows */}
-                        <div className="grid grid-cols-2 gap-y-4 max-h-96 overflow-y-auto">
-                            {Object.entries(areaData)
-                                .filter(([_, value]) => value.checked)
-                                .map(([area, data]) => (
-                                <Fragment key={area}>
-                                    <span className="text-sm text-gray-600">
-                                        {area}
-                                    </span>
-                                    <input
-                                        className="text-sm font-mono w-fit w-32 py-1 px-2 rounded bg-gray-200"
-                                        defaultValue={data.ocrCode}
-                                    />
-                                </Fragment>
+                    <table className="w-full text-sm">
+                        <thead className="bg-gray-100 sticky top-0">
+                            <tr className="text-left">
+                                <th className="p-3 font-semibold">No.</th>
+                                <th className="p-3 font-semibold">Area</th>
+                                <th className="p-3 font-semibold">OCR Area Status</th>
+                                <th className="p-3 font-semibold">OCR Code</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {Object.entries(areaData).map(([area, data], index) => (
+                                <tr key={area} className="border-b">
+                                    <td className="p-3">{index + 1}</td>
+                                    <td className="p-3 font-medium">{area}</td>
+                                    <td className={`p-3 ${
+                                        !data.changedFields?.status 
+                                            ? "text-gray-400" 
+                                            : data.checked ? "text-green-600" : "text-red-500"
+                                    }`}>
+                                        {!data.changedFields?.status 
+                                            ? "--" 
+                                            : data.checked ? "Enabled" : "Disabled"
+                                        }
+                                    </td>
+                                    <td className="p-3 font-mono text-gray-600">
+                                        {!data.changedFields?.code 
+                                            ? "--" 
+                                            : data.ocrCode || "--"
+                                        }
+                                    </td>
+                                </tr>
                             ))}
-                        </div>
-                    </div>
+                        </tbody>
+                    </table>
                 </div>
 
                 <div className="flex justify-center gap-4">                
@@ -130,7 +140,7 @@ const PreviewInventoryGroup = ({ onClose, areaData, inventoryGroupCode, clearAre
                         Cancel
                     </button>
                     <button 
-                        className="bg-blue-300 w-32 h-8 rounded button"
+                        className="bg-blue-300 w-32 h-8 rounded button font-bold text-white"
                         onClick={handleSubmit}
                     >
                         Execute
@@ -144,7 +154,7 @@ const PreviewInventoryGroup = ({ onClose, areaData, inventoryGroupCode, clearAre
             >
                 <div className="relative h-full">
                     <textarea
-                        className="h-full w-full p-2 resize-none"
+                        className="h-full w-full p-2 resize-none text-sm"
                         value={script}
                         readOnly
                     />

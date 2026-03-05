@@ -1,185 +1,138 @@
-"use client"
-import { useState } from "react";
+"use client";
+import { useState, useEffect } from "react";
 import Spinner from "@/components/Spinner";
 import { fetchUom } from "@/services/uom";
 import PreviewUom from "@/components/PreviewUom";
 import { useQuery } from "@tanstack/react-query";
+import { LuSearch } from "react-icons/lu";
 
 const UomOcr = () => {
-	const [searchTerm, setSearchTerm] = useState(""); 
+    const [searchTerm, setSearchTerm] = useState("");
+    const [editedUomList, setEditedUomList] = useState<Uom[]>([]);
+    const [showPreview, setShowPreview] = useState(false);
+	const [previewList, setPreviewList] = useState<Uom[]>([]);
 
-	const {
-		data: uom = [],
-		isLoading: loadingUom,
-		refetch
-	} = useQuery<Uom[]>({
-		queryKey: ['uom'],
-		queryFn: fetchUom,
-		staleTime: 0,
-	});
+    const { data: uom = [], isLoading: loadingUom, refetch } = useQuery<Uom[]>({
+        queryKey: ['uom'],
+        queryFn: fetchUom,
+        staleTime: 0,
+    });
 
-	const [selectedUom, setSelectedUom] = useState<Uom | null>(null);
-	const [uomOcrError, setUomOcrError] = useState(false);
-	const [uomDuplicateError, setUomDuplicateError] = useState(false);
+    // Initialize local state when data loads
+    useEffect(() => {
+        setEditedUomList(uom);
+    }, [uom]);
 
-	const [showPreview, setShowPreview] = useState(false);
+    const handleInputChange = (id: number, value: string) => {
+        const sanitized = value.replace(/[^a-zA-Z0-9]/g, "");
+        setEditedUomList(prev => prev.map(item => 
+            item.id === id ? { ...item, ocr_code: sanitized } : item
+        ));
+    };
 
-	const handleUomOcrCodeChange = (newCode: string) => {
-		if (!selectedUom) return;
-
-		setSelectedUom({ ...selectedUom, ocr_code: newCode });
-
-		if (newCode.trim() !== "") {
-			setUomOcrError(false);
-			setUomDuplicateError(false); 
-		}
-	};
-
-	const filteredItems = uom?.filter(item =>
+    const filteredItems = editedUomList.filter(item =>
         item.long_name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-	const handleSubmit = () => {
-		if (!selectedUom?.ocr_code || selectedUom.ocr_code.trim() === "") {
-			setUomOcrError(true);
-			return;
-		}
+    const handleSubmit = () => {
+		const changedItems = editedUomList.filter((editedItem) => {
+			const originalItem = uom.find((u) => u.id === editedItem.id);
+			return (originalItem?.ocr_code ?? "") !== (editedItem.ocr_code ?? "");
+		});
 
-		const original = uom.find(u => u.id === selectedUom.id);
-
-		if (original?.ocr_code === selectedUom.ocr_code.trim()) {
+		if (changedItems.length === 0) {
 			alert("No changes detected.");
 			return;
 		}
 
-		const isDuplicate = uom.some(
-			u => u.id !== selectedUom.id && u.ocr_code.toLowerCase() === selectedUom.ocr_code.trim().toLowerCase()
-		);
-
-		if (isDuplicate) {
-			setUomOcrError(true); 
-    		setUomDuplicateError(true);
-			alert("This OCR code is already used by another unit of measure.");
-			return;
-		}
-
-		setUomOcrError(false);
+		setPreviewList(changedItems);
 		setShowPreview(true);
 	};
 
-  return (
-    <div className="flex gap-4 lg:h-200 lg:w-280 2xl:h-224 2xl:w-320 rounded border-b border-gray-300 bg-[#FAFAFA] p-4">
+    const handleClear = () => {
+        setEditedUomList(uom);
+    };
+
+    return (
+        <div className="flex flex-col p-4 h-200 w-full max-w-5xl mx-auto bg-[#FAFAFA] rounded shadow">
             {showPreview && (
                 <PreviewUom 
                     onClose={() => setShowPreview(false)}
-                    selectedUom={selectedUom}
-					refetch={refetch}
+                    selectedUomList={previewList}
+                    refetch={refetch}
                 />
             )}
-		<div className="h-full flex flex-col">
-			<input 
-				type="text" 
-				placeholder="Search..." 
-				className="h-12 w-64 mb-4 bg-gray-200 p-2 rounded" 
-				onChange={(e) => setSearchTerm(e.target.value)}
-			/>
-			<p className="text-gray-400 mb-2">{uom?.length} items</p>
-			<div className="flex-1 overflow-auto relative">
-				{loadingUom ? (
-					<div className="flex justify-center items-center h-full w-full">
-						<Spinner/>					
-					</div>
-				) : filteredItems.length > 0 ? (
-						filteredItems.map((item) => (
-							<div
-								key={item.id}
-								className={`flex justify-center items-center h-16 w-64 cursor-pointer rounded
-								${selectedUom?.id === item.id ? "bg-blue-300 text-white font-bold" : "hover:bg-gray-200"}`}
-								onClick={() => {
-									setSelectedUom(item);
-									setUomOcrError(false);
-									setUomDuplicateError(false);
-								}}
-							>
-								{item.long_name}
-							</div>
-						))
-				) : (
-					<div className="flex justify-center items-center h-full text-gray-400">
-						No items found
-					</div>
-				)}
+
+            <div className="flex justify-between items-center mb-4">
+				<div>
+					<p className="font-bold text-xl">Unit of Measure</p>
+					<p className="text-gray-400">{filteredItems.length} items</p>
 				</div>
-		</div>
-		<div className="h-full flex flex-col flex-1 rounded">
-			{selectedUom ? (
-				<div className='w-full'>
-					<div className="mb-4">
-						<p className="text-lg">Unit of Measure</p>
-						<h1 className="font-bold text-2xl">
-							{selectedUom.long_name}
-						</h1>
-					</div>
-					<div className="border border-gray-300 rounded">
-						<div>
-							<table className="w-full">
-								<thead>
-									<tr className="h-12 border-b border-gray-300">
-										<th className="w-1/3 text-center">Unit Of Measure</th>
-										<th className="w-1/3 text-center">OCR Code</th>
-									</tr>
-								</thead>
-							</table>
-						</div>
-						<div className="flex-1 overflow-auto">
-							<table className="w-full">
-								<tbody>
-									<tr className="h-16 bg-[#FAFAFA] border-gray-300">
-										<td className="w-1/3 text-center">
-											{ selectedUom.long_name }
-										</td>
-										<td className="w-1/3 text-center">
-											<input 
-												type="text" 
-												className={`w-40 p-1 rounded text-center bg-gray-200 
-													${uomOcrError || uomDuplicateError ? "border-2 border-red-400" : ""}
-												`}
-												maxLength={2}
-												value={selectedUom.ocr_code ?? ""}
-												onChange={(e) => {
-													const value = e.target.value.replace(/[^a-zA-Z0-9]/g, "");
-													handleUomOcrCodeChange?.(value);
-												}} 
-											/>
-											{(uomOcrError || uomDuplicateError) &&
-												<p className="text-red-500 text-xs mt-1 h-4">
-													{uomDuplicateError ? "OCR code already in use" : "This field is required"}
-												</p>
-											}
-										</td>
-									</tr>
-								</tbody>
-							</table>
-						</div>
-					</div>
-                    
-					<div className="flex items-center justify-end pt-4 gap-4">
-						<button 
-							className="bg-blue-300 hover:bg-blue-400 w-40 h-12 rounded text-white font-bold"
-							onClick={handleSubmit}
-						>
-							Submit
-						</button>
-					</div>
-				</div>
-            ) : (
-                <div className="flex items-center justify-center text-xl text-gray-400 h-full w-full">
-					No Item Selected
-				</div>
-			)}
-		</div>
-    </div>
-  )
+                <div className="flex items-center bg-gray-100 rounded gap-2 pl-2">
+                    <LuSearch size={20} color="gray"/>
+                    <input 
+                        type="text" 
+                        placeholder="Search UOM..." 
+                        className="h-12 w-64 rounded p-2 focus:outline-none" 
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+            </div>
+
+            <div className="overflow-auto flex-grow rounded">
+                <table className="w-full text-left border-collapse table-fixed">
+					<thead className="bg-gray-100 sticky top-0">
+						<tr className="h-12">
+                            <th className="px-4 w-1/10 text-center">No.</th>
+							<th className="px-4 text-center">Long name</th>
+							<th className="px-4 text-center">OCR Code</th>
+						</tr>
+					</thead>
+					<tbody>
+						{loadingUom ? (
+							<tr>
+                                <td colSpan={3} className="h-64">
+                                    <div className="flex justify-center items-center h-full">
+                                        <Spinner />
+                                    </div>
+                                </td>
+                            </tr>
+						) : filteredItems.map((item, index) => (
+                                <tr key={item.id} className="h-16 border-b border-gray-200 hover:bg-gray-100 cursor-pointer">
+                                    <td className="px-4 w-1/10 text-center text-gray-400">{index + 1}</td>
+                                    <td className="px-4 font-medium text-center">{item.long_name}</td>
+                                    <td className="px-4 text-center">
+                                        <input 
+                                            type="text" 
+                                            className="w-32 p-1 text-center bg-white border border-gray-300 rounded focus:border-blue-400"
+                                            maxLength={2}
+                                            value={item.ocr_code ?? ""}
+                                            onChange={(e) => handleInputChange(item.id, e.target.value)}
+                                        />
+                                    </td>
+                                </tr>
+                                )
+                            ) 
+                        }
+					</tbody>
+				</table>
+            </div>
+            <div className="flex justify-end items-end pt-4 gap-4">
+                <button 
+                    className="bg-gray-200 hover:bg-gray-300 w-32 h-12 rounded"
+                    onClick={handleClear}
+                >
+                    Clear
+                </button>
+                <button 
+                    className="bg-blue-300 hover:bg-blue-400 w-32 h-12 rounded text-white font-bold"
+                    onClick={handleSubmit}
+                >
+                    Submit
+                </button>
+            </div>
+        </div>
+    );
 }
 
 export default UomOcr;

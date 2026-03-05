@@ -1,7 +1,4 @@
 import { useOcrTemplate } from '@/contexts/OcrTemplateContexts';
-import { fetchAppChannel } from '@/services/app-channel';
-import { fetchAppStore } from '@/services/app-store';
-import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react'
 import PreviewOcrTemplate from '../../PreviewOcrTemlate';
 
@@ -9,20 +6,6 @@ const SetStoreUsageLimits = ({ setCurrentStep }: OcrTemplateStepsProps) => {
     const { formData, updateFormData } = useOcrTemplate();
     const [showError, setShowError] = useState(false);
     const [previewChanges, setPreviewChanges] = useState(false);
-
-    const { data: appStore = [], isLoading: isAppStoreLoading } = useQuery<AppStore[]>({
-        queryKey: ['appStore'],
-        queryFn: fetchAppStore,
-        staleTime: 5 * 60 * 1000,
-        gcTime: 10 * 60 * 1000,
-    });
-
-    const { data: appChannel = [], isLoading: isAppChannelLoading } = useQuery<AppChannel[]>({
-        queryKey: ['appChannel'],
-        queryFn: fetchAppChannel,
-        staleTime: 5 * 60 * 1000,
-        gcTime: 10 * 60 * 1000,
-    });
 
     const isLimitValid =
         formData.limit !== undefined &&
@@ -78,16 +61,7 @@ const SetStoreUsageLimits = ({ setCurrentStep }: OcrTemplateStepsProps) => {
                 />
             </div>
             <div className="flex justify-between">
-                <p className="text-lg">Store</p>
-                <input 
-                    type="text" 
-                    className="p-2 w-64 bg-gray-200 rounded"
-                    value={ formData.store?.name || "N/A" }
-                    readOnly
-                />
-            </div>
-            <div className="flex justify-between">
-                <p className="text-lg">Channel</p>
+                <p className="text-lg">Site group</p>
                 <input 
                     type="text" 
                     className="p-2 w-64 bg-gray-200 rounded"
@@ -96,25 +70,13 @@ const SetStoreUsageLimits = ({ setCurrentStep }: OcrTemplateStepsProps) => {
                 />
             </div>
             <div className="flex justify-between">
-                <p className="text-lg">Limit</p>
-                
-                <div className="flex flex-col w-64">
-                    <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        className="p-2 bg-gray-200 rounded"
-                        value={formData.limit ?? ""}
-                        onChange={(e) => handleInputLimit(e.target.value)}
-                    />
-                    {showError && !isLimitValid && (
-                        <div className="flex justify-end mt-1">
-                            <span className="text-sm text-red-500">
-                                Limit is required (1-100)
-                            </span>
-                        </div>
-                    )}
-                </div>
+                <p className="text-lg">Store</p>
+                <input 
+                    type="text" 
+                    className="p-2 w-64 bg-gray-200 rounded"
+                    value={ formData.store?.name || "N/A" }
+                    readOnly
+                />
             </div>
         </div>
         <div className="flex justify-between w-120 mt-4">

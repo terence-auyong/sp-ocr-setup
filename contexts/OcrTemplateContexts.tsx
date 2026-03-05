@@ -1,6 +1,5 @@
-"use client";
-
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { OcrTemplateData } from "@/types/OcrTemplate";
+import { createContext, ReactNode, useContext, useState } from "react";
 
 type OcrTemplateContextType = {
     formData: OcrTemplateData;
@@ -14,14 +13,13 @@ const initialFormData: OcrTemplateData = {
     description: "",
     ocrApi: null,
     module: null,
-    store: null,
-    channel: null,
-    limit: "",
     moduleExtended: [],
     usageLimits: {
         maxUsage: 0,
         period: 'daily',
     },
+    batchSelectionType: 'siteGroup',
+    batches: [],
 };
 
 const OcrTemplateContext = createContext<OcrTemplateContextType | undefined>(undefined);

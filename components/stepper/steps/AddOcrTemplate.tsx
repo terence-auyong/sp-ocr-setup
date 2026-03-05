@@ -2,14 +2,14 @@ import { useOcrTemplate } from "@/contexts/OcrTemplateContexts";
 import { fetchAppModule } from "@/services/app-module";
 import { fetchAppOcrApi } from "@/services/app-ocr-api"
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) => {
     const { formData, updateFormData } = useOcrTemplate();
     const [showCodeError, setShowCodeError] = useState(false);
     const [showNameError, setShowNameError] = useState(false);
+    const [showDescError, setShowDescError] = useState(false);
     const [showOcrApiError, setShowOcrApiError] = useState(false);
-    const [showModuleCodeError, setShowModuleCodeError] = useState(false);
 
     const { data: appOcrApi = [], isLoading: IsOcrApiLoading } = useQuery<AppOcrApi[]>({
         queryKey: ['appOcrApi'],
@@ -34,24 +34,13 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
         }
     };
 
-    const handleModuleChange = (id: string) => {
-        if (id === "") {
-            updateFormData({ module: null });
-
-        } else {
-            setShowModuleCodeError(false);
-            const selectedMod = appModule.find(mod => mod.id === Number(id));
-            updateFormData({ module: selectedMod || null });
-        }
-    };
-
     const handleNext = () => {
         let hasError = false;
 
         setShowCodeError(false);
         setShowNameError(false);
+        setShowDescError(false);
         setShowOcrApiError(false);
-        setShowModuleCodeError(false);
 
         if (!formData.ocrCode) {
             setShowCodeError(true);
@@ -63,13 +52,13 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
             hasError = true;
         }
 
-        if (!formData.ocrApi?.id) {
-            setShowOcrApiError(true);
+        if (!formData.description) {
+            setShowDescError(true);
             hasError = true;
         }
 
-        if (!formData.module?.id) {
-            setShowModuleCodeError(true);
+        if (!formData.ocrApi?.id) {
+            setShowOcrApiError(true);
             hasError = true;
         }
 
@@ -78,6 +67,33 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
         setCurrentStep((s) => Math.min(s + 1, stepsLength!));
     };
 
+    useEffect(() => {
+        if (appModule.length === 0) return;
+
+        let targetName = "";
+        if (formData.ocrCode === "OCR Inside INV") {
+            targetName = "Inventory";
+        } else if (formData.ocrCode === "Multiple OCR Module") {
+            targetName = "OCR";
+        }
+
+        const selectedModule = appModule.find(mod => mod.name === targetName);
+        
+        if (selectedModule && formData.module?.id !== selectedModule.id) {
+            updateFormData({ module: selectedModule });
+        }
+    }, [formData.ocrCode, appModule, updateFormData]);
+
+    useEffect(() => {
+        if (appOcrApi.length > 0 && !formData.ocrApi) {
+            const defaultApi = appOcrApi.find(api => api.name === "Analyze Document");
+            
+            if (defaultApi) {
+                updateFormData({ ocrApi: defaultApi });
+            }
+        }
+    }, [appOcrApi, formData.ocrApi, updateFormData]);
+
   return (
     <div className="flex flex-col items-center justify-center gap-4 h-full w-full rounded">
         <div className="w-120 font-bold">
@@ -85,10 +101,13 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
         </div>
         <div className="flex flex-col gap-8 w-120 border-t border-b border-gray-300 pb-8 pt-8">
             <div className="flex justify-between">
-                <p className="text-lg">Code</p>
+                <p className="text-lg">
+                    Code
+                    <span className="text-red-500">*</span>
+                </p>
                 <div className="flex flex-col">
                     <select
-                        className="p-2 w-64 bg-gray-200 rounded"
+                        className="p-2 w-64 bg-gray-100 rounded"
                         onChange={(e) => {
                             setShowCodeError(false);
                             updateFormData({ocrCode: e.target.value});
@@ -96,9 +115,8 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
                         value={formData.ocrCode ?? ""}
                     >
                         <option value="">Select</option>
-                        <option value="NESTLE_TEMPLATE">NESTLE_TEMPLATE</option>
-                        <option value="GENERIC_TEMPLATE">GENERIC_TEMPLATE</option>
-                        <option value="GENERIC_MULTIPLE_TEMPLATE">GENERIC_MULTIPLE_TEMPLATE</option>
+                        <option value="OCR Inside INV">OCR Inside INV</option>
+                        <option value="Multiple OCR Module">Multiple OCR Module</option>
                     </select>
                     {showCodeError && (
                         <div className="flex justify-end mt-1">
@@ -110,11 +128,14 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
                 </div> 
             </div>
             <div className="flex justify-between">
-                <p className="text-lg">Name</p>
+                <p className="text-lg">
+                    Name
+                    <span className="text-red-500">*</span>
+                </p>
                 <div className="flex flex-col">
                     <input 
                         type="text" 
-                        className="p-2 w-64 bg-gray-200 rounded"
+                        className="p-2 w-64 bg-gray-100 rounded"
                         maxLength={100}
                         value={ formData.name ?? "" }
                         onChange={(e) => {
@@ -131,63 +152,59 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
                         </div>
                     )}
                 </div>
-
             </div>
             <div className="flex justify-between">
-                <p className="text-lg">Description</p>
-                <textarea 
-                    className="p-2 w-64 min-h-32 bg-gray-200 rounded"
-                    maxLength={65535}
-                    value={ formData.description ?? "" }
-                    onChange={(e) => updateFormData({description: e.target.value})}
-                />
+                <p className="text-lg">
+                    Description
+                    <span className="text-red-500">*</span>
+                </p>
+                 <div className="flex flex-col">
+                    <textarea 
+                        className="p-2 w-64 min-h-32 max-h-64 bg-gray-100 rounded"
+                        maxLength={65535}
+                        value={ formData.description ?? "" }
+                        onChange={(e) => updateFormData({description: e.target.value})}
+                    />
+                    {showDescError && (
+                        <div className="flex justify-end mt-1">
+                            <span className="text-sm text-red-500">
+                                Description is required
+                            </span>
+                        </div>
+                    )}
+                 </div>
             </div>
             <div className="flex justify-between">
-                <p className="text-lg">OCR API</p>
+                <p className="text-lg">
+                    OCR API
+                    <span className="text-red-500">*</span>
+                </p>
                 <div className="flex flex-col">
-                    <select
-                        className="p-2 w-64 bg-gray-200 rounded"
-                        onChange={(e) => {
-                            setShowOcrApiError(false);
-                            handleOcrApiChange(e.target.value);
-                        }}
-                        value={formData.ocrApi?.id ?? ""}
-                    >
-                        <option value="">Select</option>
-                        {appOcrApi.map((api) => (
-                            <option key={api.id} value={api.id}>
-                                {api.name}
-                            </option>
-                        ))}
-                    </select>
+                    {IsOcrApiLoading ? (
+                        <div className="p-2 w-64 bg-gray-100 rounded">
+                            Loading...
+                        </div>
+                    ): (
+                        <select
+                            className="p-2 w-64 bg-gray-100 rounded"
+                            onChange={(e) => {
+                                setShowOcrApiError(false);
+                                handleOcrApiChange(e.target.value);
+                            }}
+                            value={formData.ocrApi?.id ?? ""}
+                        >
+                            {appOcrApi.map((api) => (
+                                <option key={api.id} value={api.id}>
+                                    {api.name}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                    
                     {showOcrApiError && (
                         <div className="flex justify-end mt-1">
                             <span className="text-sm text-red-500">
                                 OCR API is required
-                            </span>
-                        </div>
-                    )}
-                </div>
-            </div>
-            <div className="flex justify-between">
-                <p className="text-lg">Module Code</p>
-                <div className="flex flex-col">
-                    <select 
-                        className="p-2 w-64 bg-gray-200 rounded"
-                        onChange={(e) => handleModuleChange(e.target.value)}
-                        value={formData.module?.id ?? ""}
-                    >
-                        <option value="">Select</option>
-                        {appModule.map((api) => (
-                            <option key={api.id} value={api.id}>
-                                {api.name}
-                            </option>
-                        ))}
-                    </select>
-                    {showModuleCodeError && (
-                        <div className="flex justify-end mt-1">
-                            <span className="text-sm text-red-500">
-                                Module Code is required
                             </span>
                         </div>
                     )}

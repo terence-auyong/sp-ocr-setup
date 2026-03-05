@@ -72,7 +72,7 @@ const ModuleCode = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) => {
                     <p className="text-lg">OCR Code</p>
                     <input 
                         type="text" 
-                        className="p-2 w-64 bg-gray-200 rounded"
+                        className="p-2 w-64 bg-gray-100 rounded"
                         readOnly
                         value={ formData.ocrCode }
                     />
@@ -81,15 +81,18 @@ const ModuleCode = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) => {
                     <p className="text-lg">Name</p>
                     <input 
                         type="text" 
-                        className="p-2 w-64 bg-gray-200 rounded"
+                        className="p-2 w-64 bg-gray-100 rounded"
                         readOnly
                         value={ formData.name }
                     />
                 </div>
                 <div className="flex justify-between items-start">
-                    <p className="text-lg">Module Code</p>
+                    <p className="text-lg">
+                        Module Code
+                        <span className="text-red-500">*</span>
+                    </p>
                     <div className="flex flex-col">
-                        <div className="w-64 bg-gray-200 rounded p-2 max-h-48 overflow-y-auto">
+                        <div className="w-64 bg-gray-100 rounded p-2 max-h-48 overflow-y-auto">
                             {isModuleLoading ? (
                                 <p className="text-sm text-gray-500">Loading...</p>
                             ) : filteredModules.length === 0 ? (

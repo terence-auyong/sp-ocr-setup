@@ -37,16 +37,19 @@ export const GET = async (req: NextRequest) => {
             //     AND typ_config.code IN ('OCR_AREA', 'OCR_CODE')
             // GROUP BY grp.code, typ.code;
             // `
+
+            //NOTE: Because of the update wherein unchecking the OCR area should 
+            // set the status to 0, status = 1 is removed here.
             `
             SELECT DISTINCT
                 grp.code AS inventory_group_code,
                 typ.code AS inventory_area,
 
                 MAX(CASE WHEN typ_config.code = 'OCR_AREA' 
-                        THEN typ_config.status END) AS ocr_area_status,
+                        THEN grp_map.status END) AS ocr_area_status,  -- ← read status from mapping row
 
                 MAX(CASE WHEN typ_config.code = 'OCR_CODE' 
-                        THEN typ_config.status END) AS ocr_code_status,
+                        THEN grp_map.status END) AS ocr_code_status,
 
                 MAX(CASE WHEN typ_config.code = 'OCR_CODE' 
                         THEN grp_map.value END) AS ocr_code
@@ -55,7 +58,6 @@ export const GET = async (req: NextRequest) => {
 
             JOIN app_inv_area_store_type_config_mapping grp_map
                 ON grp_map.inv_area_store_group_id = grp.id
-                AND grp_map.status = 1
 
             JOIN app_type typ
                 ON grp_map.type_id = typ.id

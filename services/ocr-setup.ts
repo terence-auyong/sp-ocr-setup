@@ -1,48 +1,4 @@
-type AppOcrApi = {
-    id: number;
-    code: string;
-    name: string;
-}
-
-type AppModule = {
-    id: number;
-    code: string;
-    name: string;
-}
-
-type AppStore = {
-    id: number;
-    store_code: string;
-    name: string;
-}
-
-type AppChannel = {
-    id: number;
-    code: string;
-    name: string;
-}
-
-type AppModuleExtended = {
-    id: number;
-    code: string;
-    name: string;
-}
-
-type OcrTemplateData = {
-    ocrCode: string;
-    name: string;
-    description: string;
-    ocrApi: AppOcrApi | null;
-    module: AppModule | null;
-    store: AppStore | null;
-    channel: AppChannel | null;
-    limit: string | number;
-    moduleExtended: AppModuleExtended[];
-    usageLimits: {
-        maxUsage: number;
-        period: string;
-    };
-};
+import { OcrTemplateData } from "@/types/OcrTemplate";
 
 export const fetchOcrSetup = async (formData: OcrTemplateData) => {
   const payload = {
@@ -52,9 +8,7 @@ export const fetchOcrSetup = async (formData: OcrTemplateData) => {
     ocrApi: formData.ocrApi,
     moduleCode: formData.module,
     extendedModuleCodes: formData.moduleExtended,
-    store: formData.store,
-    channel: formData.channel,
-    limit: formData.limit
+    batches: formData.batches,
   };
 
   const res = await fetch("/api/ocr-setup", {
