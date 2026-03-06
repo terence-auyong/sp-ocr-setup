@@ -23,7 +23,7 @@ type AppStepperProps = {
 
 export default function AppStepper({ steps, currentStep, setCurrentStep }: AppStepperProps) {  
   return (
-    <Stepper value={currentStep} onValueChange={setCurrentStep} className='h-full flex flex-col'>
+    <Stepper value={currentStep} className='h-full flex flex-col'>
         <StepperNav>
             {steps.map((step, index) => (
             <StepperItem key={step.value} step={step.value}>
