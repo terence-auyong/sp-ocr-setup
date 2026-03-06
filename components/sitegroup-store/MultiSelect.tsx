@@ -52,23 +52,23 @@ export function MultiSelect({ items, selected, onChange, placeholder, hasError, 
             <div
                 onClick={() => !disabled && setOpen(o => !o)}
                 className={[
-                    'min-h-[42px] w-full border rounded-lg px-3 py-2 bg-white flex flex-wrap gap-1.5 items-center transition-all duration-150',
+                    'min-h-[42px] w-full rounded px-3 py-2 bg-gray-100 flex flex-wrap gap-2 items-center transition-all duration-150',
                     disabled ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'cursor-pointer',
                     hasError ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-200 hover:border-blue-400',
                     open ? 'border-blue-500 ring-2 ring-blue-100' : '',
                 ].join(' ')}
             >
                 {isLoading ? (
-                    <div className="flex items-center text-gray-400 text-sm">
+                    <div className="flex items-center text-gray-400">
                         Loading...
                     </div>
                 ) : (
                     <>
                         {selected.length === 0 ? (
-                            <span className="text-gray-400 text-sm select-none">{placeholder}</span>
+                            <span className="text-gray-400 select-none">{placeholder}</span>
                         ) : (
                             selected.map(s => (
-                                <span key={s.id} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-md border border-blue-200">
+                                <span key={s.id} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 font-medium px-2 py-0.5 rounded-md border border-blue-200">
                                     {s.name}
                                     {!disabled && (
                                         <button onClick={(e) => remove(s.id, e)} className="ml-0.5 text-blue-400 hover:text-blue-700">
@@ -87,6 +87,7 @@ export function MultiSelect({ items, selected, onChange, placeholder, hasError, 
                 )}
             </div>
 
+            {/* Auto complete */}
             {open && !disabled && (
                 <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
                     <div className="p-2 border-b border-gray-100">

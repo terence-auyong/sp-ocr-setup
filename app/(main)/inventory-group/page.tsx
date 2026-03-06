@@ -279,7 +279,7 @@ const page = () => {
                                                 <th className="w-[30%] text-center">OCR Code</th>
                                             </tr>
                                         </thead>
-                                        <tbody>
+                                        <tbody className="divide-y divide-gray-200">
                                             {selectedInventoryGroup.areas.length === 0 ? (
                                                 <tr>
                                                     <td colSpan={4} className="text-center text-gray-400 py-10">
@@ -290,7 +290,7 @@ const page = () => {
                                                 filteredAreas.map((area, index) => {
                                                     const key = area.inventory_area;
                                                     return (
-                                                        <tr key={key} className="h-16 bg-[#FAFAFA] border-b border-gray-300 hover:bg-gray-100 cursor-pointer">
+                                                        <tr key={key} className="h-16 bg-[#FAFAFA] hover:bg-gray-100 cursor-pointer">
                                                             <td className="w-[10%] text-center text-gray-400">{index + 1}</td>
                                                             <td className="w-[30%] text-center">{area.inventory_area}</td>
                                                             <td className="w-[30%] text-center">

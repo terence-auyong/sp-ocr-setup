@@ -61,8 +61,8 @@ export type BatchEntry = {
 }
 
 
-type AppOcrApi = { id: number; code: string; name: string; }
-type AppModule = { id: number; code: string; name: string; }
+export type AppOcrApi = { id: number; code: string; name: string; }
+export type AppModule = { id: number; code: string; name: string; }
 type AppModuleExtended = { id: number; code: string; name: string; }
 
 export type AppStore = {

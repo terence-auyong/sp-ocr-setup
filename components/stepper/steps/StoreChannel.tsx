@@ -25,6 +25,11 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
     const selectionType = formData.batchSelectionType;
     const setSelectionType = (type: 'siteGroup' | 'store') => {
         updateFormData({ batchSelectionType: type, batches: [] });
+        setFormErrors({});
+        setEditErrors({});
+        setSubmitError('');
+        setForm(emptyForm());
+        setEditingId(null);
     };
 
     const rows = formData.batches;
@@ -73,6 +78,7 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
         setRows(prev => [...prev, ...newRows]);
         setForm(emptyForm());
         setFormErrors({});
+        setSubmitError("")
     };
 
     const handleEdit = (id: string) => {
@@ -81,7 +87,7 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
         setEditingId(id);
         setEditForm({ stores: row.stores, maxScan: row.maxScan });
         setEditErrors({});
-        setSubmitError('');
+        setSubmitError("");
     };
 
     const handleSaveEdit = () => {
@@ -109,7 +115,7 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
 
     const handleNext = () => {
         if (rows.length === 0) {
-            setSubmitError('Add at least one site group before continuing.');
+            setSubmitError('Add at least one site group before submitting.');
             return;
         }
         setSubmitError('');
@@ -124,13 +130,13 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
                     setCurrentStep={setCurrentStep}
                 />
             )}
-            <div className="w-full max-w-5xl">
+            <div className="flex flex-col gap-4 w-full max-w-6xl">
                 <div>
                     <h1 className="text-xl font-bold text-gray-900">Map Templates</h1>
                 </div>
 
                 <div className="flex w-full gap-4">
-                    <div className="w-1/2">
+                    <div className="w-1/2 flex flex-col gap-8 border-r border-gray-200 pr-4">
                         <div className="flex gap-4 text-sm">
                             {(['siteGroup', 'store'] as const).map(type => (
                                 <label key={type} className="flex items-center gap-2 cursor-pointer">
@@ -166,20 +172,25 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
                             <BatchForm
                                 isEditing={false}
                                 value={form}
-                                onChange={setForm}
+                                onChange={(newForm) => {
+                                    setForm(newForm);
+                                    // Clear errors for fields that are now being touched
+                                    setFormErrors(prev => ({ ...prev, siteGroups: undefined, stores: undefined, maxScan: undefined }));
+                                    setSubmitError("")
+                                }}
                                 onSubmit={handleAddBatch}
                                 selectionType={selectionType}
                                 errors={formErrors}
                             />
                         )}
 
-                        {submitError && <p className="text-sm text-red-500 text-center">{submitError}</p>}
+                        {submitError && <p className="text-sm text-red-500 text-right">{submitError}</p>}
                     </div>
 
                     <div className="flex w-1/2">
-                        <div className="space-y-2">
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                Added ({rows.length})
+                        <div className="space-y-2 w-full">
+                            <p>
+                                {rows.length} items
                             </p>
                             <BatchTable
                                 rows={rows}
@@ -203,7 +214,7 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
                         className="px-6 py-2 rounded text-sm font-semibold text-white bg-blue-300 hover:bg-blue-400 transition-colors shadow-sm"
                         onClick={handleNext}
                     >
-                        Next
+                        Submit
                     </button>
                 </div>
             </div>

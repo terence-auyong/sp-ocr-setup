@@ -65,6 +65,7 @@ export const GET = async (req: NextRequest) => {
 
             JOIN app_type_config typ_config
                 ON typ_config.id = grp_map.type_config_id
+                -- AND typ.status = 1
 
             WHERE grp.status = 1 
                 AND typ_config.code IN ('OCR_AREA', 'OCR_CODE')

@@ -112,7 +112,7 @@ const PreviewOcrTemplate = ({ onClose, setCurrentStep }: PreviewChangesProps) =>
                         <button className="bg-gray-200 w-30 h-8 rounded hover:bg-gray-300" onClick={onClose}>
                             Cancel
                         </button>
-                        <button className="bg-blue-300 w-30 h-8 rounded button" onClick={handleSubmit}>
+                        <button className="bg-blue-300 w-30 h-8 rounded button font-bold text-white" onClick={handleSubmit}>
                             Execute
                         </button>
                     </div>

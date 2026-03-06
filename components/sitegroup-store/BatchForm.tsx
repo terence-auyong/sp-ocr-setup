@@ -53,22 +53,22 @@ export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, 
     };
 
     // Live preview of how stores will be grouped in the table
-    const preview = value.siteGroups.map(sg => ({
-        siteGroup: sg,
-        stores: value.stores.filter(s => s.channel_id === sg.id),
-    }));
+    // const preview = value.siteGroups.map(sg => ({
+    //     siteGroup: sg,
+    //     stores: value.stores.filter(s => s.channel_id === sg.id),
+    // }));
 
-    const showPreview = selectionType === 'store' && value.siteGroups.length > 0 && value.stores.length > 0;
+    // const showPreview = selectionType === 'store' && value.siteGroups.length > 0 && value.stores.length > 0;
 
     return (
-        <div className={`rounded-xl border bg-white transition-all duration-200 ${isEditing ? 'border-blue-300 shadow-md shadow-blue-50' : 'border-gray-200 shadow-sm'}`}>
+        <div className={`transition-all duration-200 ${isEditing ? '' : ''}`}>
             {isEditing && (
                 <div className="px-4 pt-3 pb-0 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                     <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Editing batch</span>
                 </div>
             )}
-            <div className="p-4 space-y-4">
+            <div className="space-y-8">
                 {/* Site Group */}
                 <div className="flex items-start gap-4">
                     <label className="pt-2 w-24 shrink-0">
@@ -137,8 +137,8 @@ export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, 
                             min={1}
                             value={value.maxScan}
                             onChange={e => onChange({ ...value, maxScan: e.target.value })}
-                            placeholder="e.g. 10"
-                            className={`w-full px-3 py-2 rounded-lg border text-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-blue-100 ${errors.maxScan ? 'border-red-400' : 'border-gray-200 focus:border-blue-400 hover:border-blue-300'}`}
+                            placeholder="Enter max scan"
+                            className={`w-full px-3 py-2 rounded bg-gray-100 text-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-blue-100 ${errors.maxScan ? 'border-red-400' : 'focus:border-blue-400 hover:border-blue-300'}`}
                         />
                         {errors.maxScan && <p className="text-xs text-red-500 mt-1">{errors.maxScan}</p>}
                     </div>
@@ -155,7 +155,7 @@ export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, 
                         onClick={onSubmit} 
                         className="px-5 py-2 text-sm rounded font-semibold text-white bg-blue-300 hover:bg-blue-400 shadow-sm transition-all duration-150"
                     >
-                        {isEditing ? 'Update Batch' : '+ Add Batch'}
+                        {isEditing ? 'Update item' : '+ Add item/s'}
                     </button>
                 </div>
             </div>

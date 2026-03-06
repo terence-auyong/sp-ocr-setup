@@ -1,6 +1,7 @@
 import { useOcrTemplate } from "@/contexts/OcrTemplateContexts";
 import { fetchAppModule } from "@/services/app-module";
 import { fetchAppOcrApi } from "@/services/app-ocr-api"
+import { AppModule, AppOcrApi, OcrTemplateStepsProps } from "@/types/OcrTemplate";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
@@ -138,6 +139,7 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
                         className="p-2 w-64 bg-gray-100 rounded"
                         maxLength={100}
                         value={ formData.name ?? "" }
+                        placeholder="Enter name"
                         onChange={(e) => {
                             setShowNameError(false);
                             updateFormData({name: e.target.value});
@@ -164,6 +166,7 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
                         maxLength={65535}
                         value={ formData.description ?? "" }
                         onChange={(e) => updateFormData({description: e.target.value})}
+                        placeholder="Enter description"
                     />
                     {showDescError && (
                         <div className="flex justify-end mt-1">
