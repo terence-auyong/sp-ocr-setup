@@ -87,20 +87,25 @@ export const POST = async (req: NextRequest) => {
         }
 
         // ── 4. Loop each BatchEntry → each group → each store pair ────────────
-        // Each batch shares one maxScan across all its groups.
-        // Each group is one site group with its matched stores.
-        // If a group has no stores → one insert with store_id = 0 (site-group-only mode).
+        //
+        // Site Group mode:
+        //   group.siteGroup.id = real channel id, group.stores = [] → sId defaults to 0
+        //   → inserts: (channel_id=X, store_id=0)
+        //
+        // Store mode:
+        //   group.siteGroup.id = 0 (filter UI only), group.stores = real stores
+        //   → inserts: (channel_id=0, store_id=X) per store
 
         for (const batch of batches) {
             const maxScan = Number(batch.maxScan) || 0;
 
             for (const group of batch.groups) {
-                const channelId = group.siteGroup.id;
+                const channelId = group.siteGroup.id; // 0 in store mode
 
                 const pairs: { cId: number; sId: number }[] =
                     group.stores.length > 0
                         ? group.stores.map((s: { id: number }) => ({ cId: channelId, sId: s.id }))
-                        : [{ cId: channelId, sId: 0 }];
+                        : [{ cId: channelId, sId: 0 }]; // site group mode: store_id = 0
 
                 for (const { cId, sId } of pairs) {
                     // Upsert app_ocr_mapping

@@ -51,21 +51,27 @@ export function BatchTable({
                                     key={batch.id}
                                     className={`transition-colors ${isEditing ? 'bg-blue-50' : 'hover:bg-gray-50/60'}`}
                                 >
-                                    {/* Site groups — all groups in this batch */}
+                                    {/* Site Group mode: show site group names. Store mode: channel_id=0 so show "All" */}
                                     <td className="px-4 py-3">
-                                        <div className="flex flex-wrap gap-1">
-                                            {batch.groups.map(g => (
-                                                <span
-                                                    key={g.siteGroup.id}
-                                                    className="inline-flex items-center bg-indigo-50 text-indigo-700 font-medium px-3 py-1 rounded-md border border-indigo-100"
-                                                >
-                                                    {g.siteGroup.name}
-                                                </span>
-                                            ))}
-                                        </div>
+                                        {selectionType === 'siteGroup' ? (
+                                            <div className="flex flex-wrap gap-1">
+                                                {batch.groups.map(g => (
+                                                    <span
+                                                        key={g.siteGroup.id}
+                                                        className="inline-flex items-center bg-indigo-50 text-indigo-700 font-medium px-3 py-1 rounded-md border border-indigo-100"
+                                                    >
+                                                        {g.siteGroup.name}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <span className="inline-flex items-center bg-indigo-50 text-indigo-700 font-medium px-3 py-1 rounded-md border border-indigo-100">
+                                                All
+                                            </span>
+                                        )}
                                     </td>
 
-                                    {/* Stores — all stores across all groups in this batch */}
+                                    {/* Store mode: show selected stores */}
                                     {selectionType === 'store' && (
                                         <td className="px-4 py-3">
                                             {batch.groups.every(g => g.stores.length === 0) ? (

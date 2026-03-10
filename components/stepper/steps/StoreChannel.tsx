@@ -4,6 +4,7 @@ import PreviewOcrTemplate from '@/components/PreviewOcrTemlate';
 import { useOcrTemplate } from '@/contexts/OcrTemplateContexts';
 import { AppChannel, AppStore, BatchEntry, OcrTemplateStepsProps } from '@/types/OcrTemplate';
 import { useCallback, useState } from 'react'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 type BatchFormState = {
     siteGroups: AppChannel[];
@@ -18,12 +19,28 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
 
     const selectionType = formData.batchSelectionType;
     const setSelectionType = (type: 'siteGroup' | 'store') => {
-        updateFormData({ batchSelectionType: type, batches: [] });
-        setFormErrors({});
-        setEditErrors({});
-        setSubmitError('');
-        setForm(emptyForm());
-        setEditingId(null);
+        const doChange = () => {
+            updateFormData({ batchSelectionType: type, batches: [] });
+            setFormErrors({});
+            setEditErrors({});
+            setSubmitError('');
+            setForm(emptyForm());
+            setEditingId(null);
+        };
+
+        if (batches.length === 0) {
+            doChange();
+            return;
+        }
+
+        setConfirm({
+            open: true,
+            title: 'Change mapping type?',
+            message: 'Switching will discard all currently added batches.',
+            confirmLabel: 'Yes, switch',
+            confirmVariant: 'warning',
+            onConfirm: () => { closeConfirm(); doChange(); },
+        });
     };
 
     // Batches live in context — survive Previous/Next navigation
@@ -43,27 +60,56 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
     const [submitError, setSubmitError] = useState('');
     const [previewChanges, setPreviewChanges] = useState(false);
 
+    // Confirm dialog state
+    const [confirm, setConfirm] = useState<{
+        open: boolean;
+        title: string;
+        message: string;
+        confirmLabel: string;
+        confirmVariant: 'danger' | 'warning';
+        onConfirm: () => void;
+    }>({
+        open: false,
+        title: '',
+        message: '',
+        confirmLabel: 'Confirm',
+        confirmVariant: 'danger',
+        onConfirm: () => {},
+    });
+
+    const closeConfirm = () => setConfirm(prev => ({ ...prev, open: false }));
+
     // Convert flat form state -> BatchEntry
-    // Site Group mode: each site group gets its own group entry (stores filtered by channel_id)
-    // Store mode: site groups may repeat across batches — all stores go under one shared group
-    //             since stores are already pre-filtered per site group in the form
+    //
+    // Site Group mode:
+    //   - siteGroups are the real value → saved as-is
+    //   - store_id is always 0 (no store picker)
+    //   - groups: one entry per site group, stores: []
+    //
+    // Store mode:
+    //   - stores are the real value → saved as-is
+    //   - channel_id is always 0 (site group multiselect is just a filter UI)
+    //   - groups: single entry with siteGroup = { id: 0 }, stores = all selected stores
     const toBatchEntry = (id: string, v: BatchFormState): BatchEntry => ({
         id,
         maxScan: v.maxScan,
         groups: selectionType === 'siteGroup'
             ? v.siteGroups.map(sg => ({
                 siteGroup: sg,
-                stores: [], // site group mode has no stores
+                stores: [],           // store_id = 0 on the backend
             }))
-            : v.siteGroups.map(sg => ({
-                siteGroup: sg,
-                stores: v.stores.filter(s => s.channel_id === sg.id),
-            })),
+            : [{
+                siteGroup: { id: 0, code: 'ALL', name: 'All' }, // channel_id = 0 on the backend
+                stores: v.stores,
+            }],
     });
 
     // Convert BatchEntry -> flat form state for editing
+    // Store mode: siteGroups is empty (it was just a filter) — user re-picks filter if needed
     const toFormState = (entry: BatchEntry): BatchFormState => ({
-        siteGroups: entry.groups.map(g => g.siteGroup),
+        siteGroups: selectionType === 'siteGroup'
+            ? entry.groups.map(g => g.siteGroup)
+            : [], // filter UI state is ephemeral, not stored
         stores: entry.groups.flatMap(g => g.stores),
         maxScan: entry.maxScan,
     });
@@ -111,8 +157,18 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
     };
 
     const handleDelete = (id: string) => {
-        if (editingId === id) handleCancelEdit();
-        setBatches(prev => prev.filter(b => b.id !== id));
+        setConfirm({
+            open: true,
+            title: 'Delete batch?',
+            message: 'Are you sure you want to delete?',
+            confirmLabel: 'Delete',
+            confirmVariant: 'danger',
+            onConfirm: () => {
+                closeConfirm();
+                if (editingId === id) handleCancelEdit();
+                setBatches(prev => prev.filter(b => b.id !== id));
+            },
+        });
     };
 
     const handleNext = () => {
@@ -126,6 +182,16 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
 
     return (
         <div className="flex flex-col items-center justify-center gap-4 w-280 h-208">
+            <ConfirmDialog
+                open={confirm.open}
+                title={confirm.title}
+                message={confirm.message}
+                confirmLabel={confirm.confirmLabel}
+                confirmVariant={confirm.confirmVariant}
+                onConfirm={confirm.onConfirm}
+                onCancel={closeConfirm}
+            />
+
             {previewChanges && (
                 <PreviewOcrTemplate
                     onClose={() => setPreviewChanges(false)}
