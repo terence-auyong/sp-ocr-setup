@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { MultiSelect } from "./MultiSelect";
 import { fetchAppChannel } from "@/services/app-channel";
 import { fetchAppStore } from "@/services/app-store";
+import { BatchEntry } from "@/types/OcrTemplate";
 
 type AppStore = {
     id: number;
@@ -22,7 +23,17 @@ type BatchFormState = {
     maxScan: string;
 }
 
-export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, errors, isEditing }: {
+export function BatchForm({
+    value,
+    onChange,
+    onSubmit,
+    onCancel,
+    selectionType,
+    errors,
+    isEditing,
+    existingRows,
+    editingId,
+}: {
     value: BatchFormState;
     onChange: (v: BatchFormState) => void;
     onSubmit: () => void;
@@ -30,6 +41,8 @@ export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, 
     selectionType: 'siteGroup' | 'store';
     errors: Partial<Record<keyof BatchFormState, string>>;
     isEditing: boolean;
+    existingRows: BatchEntry[];
+    editingId: string | null;
 }) {
     const { data: channels = [], isLoading: channelsLoading } = useQuery<AppChannel[]>({
         queryKey: ['app-channels'],
@@ -41,30 +54,64 @@ export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, 
         queryFn: fetchAppStore,
     });
 
-    // Only show stores belonging to the selected site groups
-    const availableStores = stores.filter(s =>
-        value.siteGroups.some(sg => sg.id === s.channel_id)
+    const otherBatches = existingRows.filter(b => b.id !== editingId);
+
+    // Site Group mode: site groups are exclusive (used ones hidden)
+    // Store mode: site groups are reusable, only stores are exclusive
+    const usedSiteGroupIds = new Set(
+        selectionType === 'siteGroup'
+            ? otherBatches.flatMap(b => b.groups.map(g => g.siteGroup.id))
+            : [] // site groups are reusable in store mode
     );
 
-    // When site groups change, drop stores that no longer belong
+    const usedStoreIds = new Set(
+        otherBatches.flatMap(b => b.groups.flatMap(g => g.stores.map(s => s.id)))
+    );
+
+    const availableChannels = channels.filter(c => !usedSiteGroupIds.has(c.id));
+
+    // Whether "ALL SITE GROUPS" (id === 0) is selected
+    const allSiteGroupsSelected = value.siteGroups.some(sg => sg.id === 0);
+
+    // If all site groups selected → show every store (minus already used ones)
+    // Otherwise → filter by selected site group channel_ids
+    const availableStores = allSiteGroupsSelected
+        ? stores.filter(s => !usedStoreIds.has(s.id))
+        : stores.filter(s =>
+            value.siteGroups.some(sg => sg.id === s.channel_id) &&
+            !usedStoreIds.has(s.id)
+        );
+
     const handleSiteGroupChange = (siteGroups: AppChannel[]) => {
-        const validIds = new Set(stores.filter(s => siteGroups.some(sg => sg.id === s.channel_id)).map(s => s.id));
+        const isAllSelected = siteGroups.some(sg => sg.id === 0);
+
+        if (isAllSelected) {
+            // "All site groups" selected — clear stores so user picks from all
+            onChange({ ...value, siteGroups, stores: [] });
+            return;
+        }
+
+        // Normal case — drop stores that no longer belong to selected site groups
+        const validIds = new Set(
+            stores
+                .filter(s => siteGroups.some(sg => sg.id === s.channel_id))
+                .map(s => s.id)
+        );
         onChange({ ...value, siteGroups, stores: value.stores.filter(s => validIds.has(s.id)) });
     };
 
-    // Live preview of how stores will be grouped in the table
-    // const preview = value.siteGroups.map(sg => ({
-    //     siteGroup: sg,
-    //     stores: value.stores.filter(s => s.channel_id === sg.id),
-    // }));
-
-    // const showPreview = selectionType === 'store' && value.siteGroups.length > 0 && value.stores.length > 0;
+    const storePickerDisabled = value.siteGroups.length === 0;
+    const storePlaceholder = storePickerDisabled
+        ? 'Select site groups first...'
+        : allSiteGroupsSelected
+            ? 'Select stores (all site groups)...'
+            : 'Select stores...';
 
     return (
-        <div className={`transition-all duration-200 ${isEditing ? '' : ''}`}>
+        <div className="transition-all duration-200">
             {isEditing && (
-                <div className="px-4 pt-3 pb-0 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                <div className="pb-4 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />
                     <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Editing batch</span>
                 </div>
             )}
@@ -76,12 +123,13 @@ export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, 
                     </label>
                     <div className="flex-1">
                         <MultiSelect
-                            items={channels}
+                            items={availableChannels}
                             isLoading={channelsLoading}
                             selected={value.siteGroups}
                             onChange={handleSiteGroupChange}
                             placeholder="Select site groups..."
                             hasError={!!errors.siteGroups}
+                            selectionType="siteGroup"
                         />
                         {errors.siteGroups && <p className="text-xs text-red-500 mt-1">{errors.siteGroups}</p>}
                     </div>
@@ -90,7 +138,7 @@ export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, 
                 {/* Store */}
                 {selectionType === 'store' && (
                     <div className="flex items-start gap-4">
-                        <label className="font-medium pt-2 w-24 shrink-0">
+                        <label className="pt-2 w-24 shrink-0">
                             Store<span className="text-red-500">*</span>
                         </label>
                         <div className="flex-1">
@@ -98,30 +146,13 @@ export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, 
                                 items={availableStores}
                                 isLoading={storesLoading}
                                 selected={value.stores}
-                                onChange={stores => onChange({ ...value, stores })}
-                                placeholder={value.siteGroups.length === 0 ? 'Select site groups first...' : 'Select stores...'}
+                                onChange={s => onChange({ ...value, stores: s })}
+                                placeholder={storePlaceholder}
                                 hasError={!!errors.stores}
-                                disabled={value.siteGroups.length === 0}
+                                disabled={storePickerDisabled}
+                                selectionType="store"
                             />
                             {errors.stores && <p className="text-xs text-red-500 mt-1">{errors.stores}</p>}
-
-                            {/* preview */}
-                            {/* {showPreview && (
-                                <div className="mt-2 p-2 bg-gray-50 rounded-lg border border-gray-100 space-y-1">
-                                    <p className="text-xs text-gray-400 font-medium mb-1">Preview grouping:</p>
-                                    {preview.map(({ siteGroup, stores }) => (
-                                        <div key={siteGroup.id} className="flex items-start gap-2 text-xs">
-                                            <span className="font-semibold text-indigo-600 shrink-0 mt-0.5 w-20 truncate">{siteGroup.name}:</span>
-                                            <span className="text-gray-600">
-                                                {stores.length > 0
-                                                    ? stores.map(s => s.name).join(', ')
-                                                    : <span className="italic text-gray-400">no stores selected</span>
-                                                }
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )} */}
                         </div>
                     </div>
                 )}
@@ -151,11 +182,11 @@ export function BatchForm({ value, onChange, onSubmit, onCancel, selectionType, 
                             Cancel
                         </button>
                     )}
-                    <button 
-                        onClick={onSubmit} 
+                    <button
+                        onClick={onSubmit}
                         className="px-5 py-2 text-sm rounded font-semibold text-white bg-blue-300 hover:bg-blue-400 shadow-sm transition-all duration-150"
                     >
-                        {isEditing ? 'Update item' : '+ Add item/s'}
+                        {isEditing ? 'Update batch' : '+ Add batch'}
                     </button>
                 </div>
             </div>

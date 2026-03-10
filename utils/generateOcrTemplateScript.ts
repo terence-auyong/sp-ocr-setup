@@ -6,16 +6,19 @@ const generateOcrTemplateScript = (formData: OcrTemplateData) => {
         .map(code => `'${code}'`)
         .join(', ');
 
-    // Each SiteGroupRow is now independent — one block per site group-store pair
-    const batchBlocks = formData.batches.flatMap(row => {
-        const channelId = row.siteGroup.id;
-        const maxScan = row.maxScan;
+    // Each BatchEntry has groups[] — one group per site group, each with its own stores
+    const batchBlocks = formData.batches.flatMap(batch => {
+        const maxScan = batch.maxScan;
 
-        const pairs = row.stores.length > 0
-            ? row.stores.map(s => ({ cId: channelId, sId: s.id, storeName: s.name, channelName: row.siteGroup.name }))
-            : [{ cId: channelId, sId: 0, storeName: 'N/A', channelName: row.siteGroup.name }];
+        return batch.groups.flatMap(group => {
+            const channelId = group.siteGroup.id;
+            const channelName = group.siteGroup.name;
 
-        return pairs.map(({ cId, sId, storeName, channelName }) => `
+            const pairs = group.stores.length > 0
+                ? group.stores.map(s => ({ cId: channelId, sId: s.id, storeName: s.name, channelName }))
+                : [{ cId: channelId, sId: 0, storeName: 'N/A', channelName }];
+
+            return pairs.map(({ cId, sId, storeName, channelName }) => `
 -----------------------------------------------
 -- Site Group: ${channelName} | Store: ${storeName} | Max Scan: ${maxScan}
 
@@ -87,7 +90,7 @@ ON tbl.id = dv.table_id
 AND tbl.name = 'app_ocr_store_limit'
 SET dv.version = @version;
 
-INSERT INTO app_ocr_store_limit (channel_id, store_id, template_id, limit, start_date, status, created_date, modified_by, version)
+INSERT INTO app_ocr_store_limit (channel_id, store_id, template_id, \`limit\`, start_date, status, created_date, modified_by, version)
 VALUES (
     @channel_id,
     @store_id,
@@ -99,6 +102,7 @@ VALUES (
     'root',
     @version
 );`);
+        });
     }).join('\n');
 
   return (

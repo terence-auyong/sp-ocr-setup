@@ -1,5 +1,57 @@
-import { OcrTemplateData } from "@/types/OcrTemplate";
-import { createContext, ReactNode, useContext, useState } from "react";
+"use client";
+
+import { createContext, useContext, useState, ReactNode } from 'react';
+
+// ─── Shared types ─────────────────────────────────────────────────────────────
+
+export type AppOcrApi = { id: number; code: string; name: string; }
+export type AppModule = { id: number; code: string; name: string; }
+export type AppModuleExtended = { id: number; code: string; name: string; }
+
+export type AppStore = {
+    id: number;
+    store_code: string;
+    name: string;
+    channel_id: number;
+}
+
+export type AppChannel = {
+    id: number;
+    code: string;
+    name: string;
+}
+
+export type SelectionType = 'siteGroup' | 'store';
+
+// One batch = one "Add" action.
+// Holds multiple site groups, each with their matched stores, and a shared maxScan.
+export type BatchGroup = {
+    siteGroup: AppChannel;
+    stores: AppStore[]; // only stores whose channel_id === siteGroup.id
+}
+
+export type BatchEntry = {
+    id: string;
+    maxScan: string;
+    groups: BatchGroup[]; // one group per selected site group
+}
+
+export type OcrTemplateData = {
+    ocrCode: string;
+    name: string;
+    description: string;
+    ocrApi: AppOcrApi | null;
+    module: AppModule | null;
+    moduleExtended: AppModuleExtended[];
+    usageLimits: {
+        maxUsage: number;
+        period: string;
+    };
+    batchSelectionType: SelectionType;
+    batches: BatchEntry[];
+};
+
+// ─── Context ──────────────────────────────────────────────────────────────────
 
 type OcrTemplateContextType = {
     formData: OcrTemplateData;

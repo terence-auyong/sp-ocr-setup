@@ -3,7 +3,6 @@ import { useState } from 'react';
 import AppStepper from '../../components/stepper/AppStepper';
 import AddOcrTemplate from '../../components/stepper/steps/AddOcrTemplate';
 import StoreChannel from '../../components/stepper/steps/StoreChannel';
-import ModuleCode from '../../components/stepper/steps/ModuleCode';
 import { OcrTemplateProvider } from '../../contexts/OcrTemplateContexts';
 
 const page = () => {
@@ -11,8 +10,8 @@ const page = () => {
 
 	const steps = [
 		{ 
-			value: 1, 
-			content: 
+			id: 1, 
+			component: 
 			<AddOcrTemplate 
 				setCurrentStep={setCurrentStep} 
 				currentStep={currentStep}
@@ -20,17 +19,8 @@ const page = () => {
 			/>
 		},
 		{ 
-			value: 2, 
-			content: 
-			<ModuleCode 
-				setCurrentStep={setCurrentStep} 
-				currentStep={currentStep}
-				stepsLength={6}
-			/>
-		},
-		{ 
-			value: 3, 
-			content: 
+			id: 2, 
+			component: 
 			<StoreChannel 
 				setCurrentStep={setCurrentStep} 
 				currentStep={currentStep}
@@ -39,11 +29,19 @@ const page = () => {
 		},
 	];
 
+	const activeStep = steps.find(step => step.id === currentStep);
+
 	return (
 		<OcrTemplateProvider>
 			<div className='flex justify-center items-center h-screen w-full bg-gray-200'>
-				<div className="bg-[#FAFAFA] rounded-sm p-4 lg:h-200 lg:w-280 2xl:h-224 2xl:w-320">
-					<AppStepper steps={steps} currentStep={currentStep} setCurrentStep={setCurrentStep}/>
+				<div className="flex justify-center items-center bg-[#FAFAFA] rounded-sm p-4 lg:h-200 lg:w-280 2xl:h-224 2xl:w-320">
+					{activeStep ? (
+                        <div key={activeStep.id}>
+                            {activeStep.component}
+                        </div>
+                    ) : (
+                        <div>Step not found</div>
+                    )}
 				</div>
 			</div>
 		</OcrTemplateProvider>

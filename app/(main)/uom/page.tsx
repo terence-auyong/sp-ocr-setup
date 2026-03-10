@@ -20,7 +20,9 @@ const UomOcr = () => {
 
     // Initialize local state when data loads
     useEffect(() => {
-        setEditedUomList(uom);
+        if (uom.length > 0) {
+            setEditedUomList(uom);
+        }
     }, [uom]);
 
     const handleInputChange = (id: number, value: string) => {
@@ -83,8 +85,8 @@ const UomOcr = () => {
                 <table className="w-full text-left border-collapse table-fixed">
 					<thead className="bg-gray-100 sticky top-0">
 						<tr className="h-12">
-                            <th className="px-4 w-1/10 text-center">No.</th>
 							<th className="px-4 text-center">Long name</th>
+                            <th className="px-4 text-center">Short name</th>
 							<th className="px-4 text-center">OCR Code</th>
 						</tr>
 					</thead>
@@ -99,8 +101,8 @@ const UomOcr = () => {
                             </tr>
 						) : filteredItems.map((item, index) => (
                                 <tr key={item.id} className="h-16 border-b border-gray-200 hover:bg-gray-100 cursor-pointer">
-                                    <td className="px-4 w-1/10 text-center text-gray-400">{index + 1}</td>
                                     <td className="px-4 font-medium text-center">{item.long_name}</td>
+                                    <td className="px-4 font-medium text-center">{item.short_name}</td>
                                     <td className="px-4 text-center">
                                         <input 
                                             type="text" 

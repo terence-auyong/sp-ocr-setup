@@ -1,9 +1,10 @@
 import { useOcrTemplate } from "@/contexts/OcrTemplateContexts";
 import { fetchAppModule } from "@/services/app-module";
+import { fetchAppModuleExtended } from "@/services/app-module-extended";
 import { fetchAppOcrApi } from "@/services/app-ocr-api"
 import { AppModule, AppOcrApi, OcrTemplateStepsProps } from "@/types/OcrTemplate";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) => {
     const { formData, updateFormData } = useOcrTemplate();
@@ -11,6 +12,7 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
     const [showNameError, setShowNameError] = useState(false);
     const [showDescError, setShowDescError] = useState(false);
     const [showOcrApiError, setShowOcrApiError] = useState(false);
+    const [showModuleCodeError, setShowModuleCodeError] = useState(false);
 
     const { data: appOcrApi = [], isLoading: IsOcrApiLoading } = useQuery<AppOcrApi[]>({
         queryKey: ['appOcrApi'],
@@ -26,12 +28,49 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
         gcTime: 10 * 60 * 1000,
     });
 
+    const {data: AppModuleExtended = [], isLoading: isExtendedModuleLoading } = useQuery<AppModule[]>({
+        queryKey: ['appModuleExtended'],
+        queryFn: fetchAppModuleExtended,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    });
+
+    const filteredExtendedModules = useMemo(() => {
+        if (!formData.module) return AppModuleExtended;
+
+        const isInventoryModule = formData.module.code.toLowerCase() === 'inventory' || 
+                                    formData.module.name.toLowerCase() === 'inventory';
+
+        if (isInventoryModule) {
+            return AppModuleExtended.filter(m => 
+                m.code.toLowerCase() === 'inventory' || 
+                m.name.toLowerCase() === 'inventory'
+            );
+        }
+
+        return AppModuleExtended;
+    }, [formData.module, AppModuleExtended]);
+
     const handleOcrApiChange = (id: string) => {
         if (id === "") {
             updateFormData({ ocrApi: null });
         } else {
             const selectedApi = appOcrApi.find(api => api.id === Number(id));
             updateFormData({ ocrApi: selectedApi || null });
+        }
+    };
+
+    const handleModuleToggle = (module: AppModule) => {
+        const isSelected = formData.moduleExtended?.some(m => m.id === module.id);
+        
+        if (isSelected) {
+            updateFormData({
+                moduleExtended: formData.moduleExtended?.filter(m => m.id !== module.id)
+            });
+        } else {
+            updateFormData({
+                moduleExtended: [...formData.moduleExtended, module]
+            });
         }
     };
 
@@ -42,6 +81,7 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
         setShowNameError(false);
         setShowDescError(false);
         setShowOcrApiError(false);
+        setShowModuleCodeError(false);
 
         if (!formData.ocrCode) {
             setShowCodeError(true);
@@ -60,6 +100,11 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
 
         if (!formData.ocrApi?.id) {
             setShowOcrApiError(true);
+            hasError = true;
+        }
+
+        if (!formData.moduleExtended || formData.moduleExtended.length === 0) {
+            setShowModuleCodeError(true);
             hasError = true;
         }
 
@@ -208,6 +253,43 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
                         <div className="flex justify-end mt-1">
                             <span className="text-sm text-red-500">
                                 OCR API is required
+                            </span>
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="flex justify-between items-start">
+                <p className="text-lg">
+                    Module Code
+                    <span className="text-red-500">*</span>
+                </p>
+                <div className="flex flex-col">
+                    <div className="w-64 bg-gray-100 rounded p-2 max-h-48 overflow-y-auto">
+                        {isExtendedModuleLoading ? (
+                            <p className="text-sm text-gray-500">Loading...</p>
+                        ) : filteredExtendedModules.length === 0 ? (
+                            <p className="text-sm text-gray-500">No modules available</p>
+                        ) : (
+                            filteredExtendedModules.map((api) => (
+                                <label 
+                                    key={api.id} 
+                                    className="flex items-center gap-2 py-1 cursor-pointer hover:bg-gray-300 px-1 rounded"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.moduleExtended?.some(m => m.id === api.id) ?? false}
+                                        onChange={() => handleModuleToggle(api)}
+                                        className="cursor-pointer"
+                                    />
+                                    <span className="text-sm">{api.name}</span>
+                                </label>
+                            ))
+                        )}
+                    </div>
+                    {showModuleCodeError && (
+                        <div className="flex justify-end mt-1">
+                            <span className="text-sm text-red-500">
+                                Module Code is required
                             </span>
                         </div>
                     )}

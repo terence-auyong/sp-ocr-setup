@@ -2,7 +2,7 @@ import { BatchForm } from '@/components/sitegroup-store/BatchForm';
 import { BatchTable } from '@/components/sitegroup-store/BatchTable';
 import PreviewOcrTemplate from '@/components/PreviewOcrTemlate';
 import { useOcrTemplate } from '@/contexts/OcrTemplateContexts';
-import { AppChannel, AppStore, SiteGroupRow, OcrTemplateStepsProps } from '@/types/OcrTemplate';
+import { AppChannel, AppStore, BatchEntry, OcrTemplateStepsProps } from '@/types/OcrTemplate';
 import { useCallback, useState } from 'react'
 
 type BatchFormState = {
@@ -13,15 +13,9 @@ type BatchFormState = {
 
 const emptyForm = (): BatchFormState => ({ siteGroups: [], stores: [], maxScan: "" });
 
-type EditFormState = {
-    stores: AppStore[];
-    maxScan: string;
-}
-
 const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
     const { formData, updateFormData } = useOcrTemplate();
 
-    // Both selectionType and rows live in context — survive Previous/Next navigation
     const selectionType = formData.batchSelectionType;
     const setSelectionType = (type: 'siteGroup' | 'store') => {
         updateFormData({ batchSelectionType: type, batches: [] });
@@ -32,8 +26,9 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
         setEditingId(null);
     };
 
-    const rows = formData.batches;
-    const setRows = (updater: SiteGroupRow[] | ((prev: SiteGroupRow[]) => SiteGroupRow[])) => {
+    // Batches live in context — survive Previous/Next navigation
+    const batches = formData.batches;
+    const setBatches = (updater: BatchEntry[] | ((prev: BatchEntry[]) => BatchEntry[])) => {
         const next = typeof updater === 'function' ? updater(formData.batches) : updater;
         updateFormData({ batches: next });
     };
@@ -42,80 +37,87 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
     const [formErrors, setFormErrors] = useState<Partial<Record<keyof BatchFormState, string>>>({});
 
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [editForm, setEditForm] = useState<EditFormState>({ stores: [], maxScan: '' });
-    const [editErrors, setEditErrors] = useState<Partial<Record<keyof EditFormState, string>>>({});
+    const [editForm, setEditForm] = useState<BatchFormState>(emptyForm());
+    const [editErrors, setEditErrors] = useState<Partial<Record<keyof BatchFormState, string>>>({});
 
     const [submitError, setSubmitError] = useState('');
     const [previewChanges, setPreviewChanges] = useState(false);
 
-    const validateAdd = useCallback((v: BatchFormState): boolean => {
+    // Convert flat form state -> BatchEntry
+    // Site Group mode: each site group gets its own group entry (stores filtered by channel_id)
+    // Store mode: site groups may repeat across batches — all stores go under one shared group
+    //             since stores are already pre-filtered per site group in the form
+    const toBatchEntry = (id: string, v: BatchFormState): BatchEntry => ({
+        id,
+        maxScan: v.maxScan,
+        groups: selectionType === 'siteGroup'
+            ? v.siteGroups.map(sg => ({
+                siteGroup: sg,
+                stores: [], // site group mode has no stores
+            }))
+            : v.siteGroups.map(sg => ({
+                siteGroup: sg,
+                stores: v.stores.filter(s => s.channel_id === sg.id),
+            })),
+    });
+
+    // Convert BatchEntry -> flat form state for editing
+    const toFormState = (entry: BatchEntry): BatchFormState => ({
+        siteGroups: entry.groups.map(g => g.siteGroup),
+        stores: entry.groups.flatMap(g => g.stores),
+        maxScan: entry.maxScan,
+    });
+
+    const validateForm = useCallback((v: BatchFormState, setErrors: (e: Partial<Record<keyof BatchFormState, string>>) => void): boolean => {
         const e: Partial<Record<keyof BatchFormState, string>> = {};
         if (v.siteGroups.length === 0) e.siteGroups = 'At least one site group is required';
         if (selectionType === 'store' && v.stores.length === 0) e.stores = 'At least one store is required';
         if (!v.maxScan || Number(v.maxScan) < 1) e.maxScan = 'Enter a valid max scan value';
-        setFormErrors(e);
+        setErrors(e);
         return Object.keys(e).length === 0;
     }, [selectionType]);
 
-    const validateEdit = (v: EditFormState): boolean => {
-        const e: Partial<Record<keyof EditFormState, string>> = {};
-        if (selectionType === 'store' && v.stores.length === 0) e.stores = 'At least one store is required';
-        if (!v.maxScan || Number(v.maxScan) < 1) e.maxScan = 'Enter a valid max scan value';
-        setEditErrors(e);
-        return Object.keys(e).length === 0;
-    };
-
     const handleAddBatch = () => {
-        if (!validateAdd(form)) return;
-
-        const newRows: SiteGroupRow[] = form.siteGroups.map(sg => ({
-            id: crypto.randomUUID(),
-            siteGroup: sg,
-            stores: form.stores.filter(s => s.channel_id === sg.id),
-            maxScan: form.maxScan,
-        }));
-
-        setRows(prev => [...prev, ...newRows]);
+        if (!validateForm(form, setFormErrors)) return;
+        setBatches(prev => [...prev, toBatchEntry(crypto.randomUUID(), form)]);
         setForm(emptyForm());
         setFormErrors({});
-        setSubmitError("")
+        setSubmitError('');
     };
 
     const handleEdit = (id: string) => {
-        const row = rows.find(r => r.id === id);
-        if (!row) return;
+        const entry = batches.find(b => b.id === id);
+        if (!entry) return;
         setEditingId(id);
-        setEditForm({ stores: row.stores, maxScan: row.maxScan });
+        setEditForm(toFormState(entry));
         setEditErrors({});
-        setSubmitError("");
+        setSubmitError('');
     };
 
     const handleSaveEdit = () => {
-        if (!validateEdit(editForm)) return;
-        setRows(prev => prev.map(r =>
-            r.id === editingId
-                ? { ...r, stores: editForm.stores, maxScan: editForm.maxScan }
-                : r
+        if (!validateForm(editForm, setEditErrors)) return;
+        setBatches(prev => prev.map(b =>
+            b.id === editingId ? toBatchEntry(editingId, editForm) : b
         ));
         setEditingId(null);
-        setEditForm({ stores: [], maxScan: '' });
+        setEditForm(emptyForm());
         setEditErrors({});
     };
 
     const handleCancelEdit = () => {
         setEditingId(null);
-        setEditForm({ stores: [], maxScan: '' });
+        setEditForm(emptyForm());
         setEditErrors({});
     };
 
     const handleDelete = (id: string) => {
         if (editingId === id) handleCancelEdit();
-        setRows(prev => prev.filter(r => r.id !== id));
+        setBatches(prev => prev.filter(b => b.id !== id));
     };
 
     const handleNext = () => {
-        if (rows.length === 0) {
-            setSubmitError('Add at least one site group before submitting.');
+        if (batches.length === 0) {
+            setSubmitError('Add at least one batch before submitting.');
             return;
         }
         setSubmitError('');
@@ -123,19 +125,19 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center gap-4 h-208 w-full">
+        <div className="flex flex-col items-center justify-center gap-4 w-280 h-208">
             {previewChanges && (
                 <PreviewOcrTemplate
                     onClose={() => setPreviewChanges(false)}
                     setCurrentStep={setCurrentStep}
                 />
             )}
-            <div className="flex flex-col gap-4 w-full max-w-6xl">
+            <div className="w-full flex flex-col gap-4">
                 <div>
                     <h1 className="text-xl font-bold text-gray-900">Map Templates</h1>
                 </div>
 
-                <div className="flex w-full gap-4">
+                <div className="flex gap-4">
                     <div className="w-1/2 flex flex-col gap-8 border-r border-gray-200 pr-4">
                         <div className="flex gap-4 text-sm">
                             {(['siteGroup', 'store'] as const).map(type => (
@@ -157,30 +159,42 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
                         {editingId ? (
                             <BatchForm
                                 isEditing={true}
-                                value={{
-                                    siteGroups: [rows.find(r => r.id === editingId)!.siteGroup],
-                                    stores: editForm.stores,
-                                    maxScan: editForm.maxScan
+                                value={editForm}
+                                onChange={(v) => {
+                                    setEditForm(v);
+                                    setEditErrors(prev => ({
+                                        ...prev,
+                                        ...(v.siteGroups.length > 0 && { siteGroups: undefined }),
+                                        ...(v.stores.length > 0 && { stores: undefined }),
+                                        ...(v.maxScan && Number(v.maxScan) >= 1 && { maxScan: undefined }),
+                                    }));
                                 }}
-                                onChange={(v) => setEditForm({ stores: v.stores, maxScan: v.maxScan })}
                                 onSubmit={handleSaveEdit}
                                 onCancel={handleCancelEdit}
                                 selectionType={selectionType}
                                 errors={editErrors}
+                                existingRows={batches}
+                                editingId={editingId}
                             />
                         ) : (
                             <BatchForm
                                 isEditing={false}
                                 value={form}
-                                onChange={(newForm) => {
-                                    setForm(newForm);
-                                    // Clear errors for fields that are now being touched
-                                    setFormErrors(prev => ({ ...prev, siteGroups: undefined, stores: undefined, maxScan: undefined }));
-                                    setSubmitError("")
+                                onChange={(v) => {
+                                    setForm(v);
+                                    setFormErrors(prev => ({
+                                        ...prev,
+                                        ...(v.siteGroups.length > 0 && { siteGroups: undefined }),
+                                        ...(v.stores.length > 0 && { stores: undefined }),
+                                        ...(v.maxScan && Number(v.maxScan) >= 1 && { maxScan: undefined }),
+                                    }));
+                                    setSubmitError('');
                                 }}
                                 onSubmit={handleAddBatch}
                                 selectionType={selectionType}
                                 errors={formErrors}
+                                existingRows={batches}
+                                editingId={null}
                             />
                         )}
 
@@ -189,11 +203,9 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
 
                     <div className="flex w-1/2">
                         <div className="space-y-2 w-full">
-                            <p>
-                                {rows.length} items
-                            </p>
+                            <p>{batches.length} items</p>
                             <BatchTable
-                                rows={rows}
+                                batches={batches}
                                 selectionType={selectionType}
                                 editingId={editingId}
                                 onEdit={handleEdit}
@@ -214,7 +226,7 @@ const StoreChannel = ({ setCurrentStep }: OcrTemplateStepsProps) => {
                         className="px-6 py-2 rounded text-sm font-semibold text-white bg-blue-300 hover:bg-blue-400 transition-colors shadow-sm"
                         onClick={handleNext}
                     >
-                        Submit
+                        Done
                     </button>
                 </div>
             </div>

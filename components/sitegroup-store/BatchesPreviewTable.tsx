@@ -1,11 +1,11 @@
-import { SiteGroupRow } from "@/types/OcrTemplate";
+import { BatchEntry } from "@/types/OcrTemplate";
 
-export function BatchesPreviewTable({ rows }: { rows: SiteGroupRow[] }) {
+export function BatchesPreviewTable({ rows }: { rows: BatchEntry[] }) {
     if (rows.length === 0) {
         return <span className="text-gray-400 text-sm italic">No site groups configured</span>;
     }
 
-    const hasStores = rows.some(r => r.stores.length > 0);
+    const hasStores = rows.some(b => b.groups.some(g => g.stores.length > 0));
 
     return (
         <div className="rounded-lg border border-gray-200 overflow-hidden w-full">
@@ -26,20 +26,24 @@ export function BatchesPreviewTable({ rows }: { rows: SiteGroupRow[] }) {
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                    {rows.map(row => (
-                        <tr key={row.id} className="hover:bg-gray-50/60">
+                    {rows.map(batch => (
+                        <tr key={batch.id} className="hover:bg-gray-50/60">
                             <td className="px-3 py-2">
-                                <span className="inline-flex items-center bg-indigo-50 text-indigo-700 font-medium px-2 py-0.5 rounded text-xs border border-indigo-100">
-                                    {row.siteGroup.name}
-                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                    {batch.groups.map(g => (
+                                        <span key={g.siteGroup.id} className="inline-flex items-center bg-indigo-50 text-indigo-700 font-medium px-2 py-0.5 rounded text-xs border border-indigo-100">
+                                            {g.siteGroup.name}
+                                        </span>
+                                    ))}
+                                </div>
                             </td>
                             {hasStores && (
                                 <td className="px-3 py-2">
-                                    {row.stores.length === 0 ? (
+                                    {batch.groups.every(g => g.stores.length === 0) ? (
                                         <span className="text-gray-400 text-xs italic">—</span>
                                     ) : (
                                         <div className="flex flex-wrap gap-1">
-                                            {row.stores.map(s => (
+                                            {batch.groups.flatMap(g => g.stores).map((s: { id: number; name: string }) => (
                                                 <span key={s.id} className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded border border-gray-200">
                                                     {s.name}
                                                 </span>
@@ -49,7 +53,7 @@ export function BatchesPreviewTable({ rows }: { rows: SiteGroupRow[] }) {
                                 </td>
                             )}
                             <td className="px-3 py-2 font-semibold text-gray-800">
-                                {row.maxScan}
+                                {batch.maxScan}
                             </td>
                         </tr>
                     ))}

@@ -20,24 +20,6 @@ function poolKey(stage: EdtrStage, schemaName: string | null): string {
  * matching schema_name to an entry's schema_names. Use in API routes:
  * const pool = await getPool(req);
  */
-export async function getPool(req: NextRequest): Promise<mysql.Pool> {
-  const stage = getStageFromRequest(req);
-  const schemaName = await getSchemaNameFromRequest(req);
-  const key = poolKey(stage, schemaName);
-
-  if (globalForDb.pools[key]) return globalForDb.pools[key];
-
-  const creds = await getCredentialsForStage(stage, schemaName);
-  const pool = mysql.createPool({
-    host: creds.host,
-    user: creds.user,
-    password: creds.password,
-    database: creds.database,
-  });
-  globalForDb.pools[key] = pool;
-  return pool;
-}
-
 // export async function getPool(req: NextRequest): Promise<mysql.Pool> {
 //   const stage = getStageFromRequest(req);
 //   const schemaName = await getSchemaNameFromRequest(req);
@@ -45,31 +27,49 @@ export async function getPool(req: NextRequest): Promise<mysql.Pool> {
 
 //   if (globalForDb.pools[key]) return globalForDb.pools[key];
 
-//   let pool;
-
-//   if (process.env.DB_HOST) {
-//     pool = mysql.createPool({
-//       host: process.env.DB_HOST,
-//       user: process.env.DB_USER,
-//       password: process.env.DB_PASSWORD,
-//       database: process.env.DB_NAME,
-//       waitForConnections: true,
-//       connectionLimit: 10,
-//     });
-//   } else {
-//     const creds = await getCredentialsForStage(stage, schemaName);
-//     pool = mysql.createPool({
-//       host: creds.host,
-//       user: creds.user,
-//       password: creds.password,
-//       database: creds.database,
-//       waitForConnections: true,
-//     });
-//   }
-
+//   const creds = await getCredentialsForStage(stage, schemaName);
+//   const pool = mysql.createPool({
+//     host: creds.host,
+//     user: creds.user,
+//     password: creds.password,
+//     database: creds.database,
+//   });
 //   globalForDb.pools[key] = pool;
 //   return pool;
 // }
+
+export async function getPool(req: NextRequest): Promise<mysql.Pool> {
+  const stage = getStageFromRequest(req);
+  const schemaName = await getSchemaNameFromRequest(req);
+  const key = poolKey(stage, schemaName);
+
+  if (globalForDb.pools[key]) return globalForDb.pools[key];
+
+  let pool;
+
+  if (process.env.DB_HOST) {
+    pool = mysql.createPool({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 10,
+    });
+  } else {
+    const creds = await getCredentialsForStage(stage, schemaName);
+    pool = mysql.createPool({
+      host: creds.host,
+      user: creds.user,
+      password: creds.password,
+      database: creds.database,
+      waitForConnections: true,
+    });
+  }
+
+  globalForDb.pools[key] = pool;
+  return pool;
+}
 
 /**
  * Closes and removes the DB pool for the given stage and schema_name.
