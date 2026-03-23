@@ -1,10 +1,10 @@
-import { BatchForm } from '@/components/sitegroup-store/BatchForm';
-import { BatchTable } from '@/components/sitegroup-store/BatchTable';
-import PreviewOcrTemplate from '@/components/PreviewOcrTemlate';
+import { BatchForm } from '@/components/ocr-template/BatchForm';
+import { BatchTable } from '@/components/ocr-template/BatchTable';
+import PreviewOcrTemplate from '@/components/ocr-template/PreviewOcrTemlate';
 import { useOcrTemplate } from '@/contexts/OcrTemplateContexts';
 import { AppChannel, AppStore, BatchEntry, OcrTemplateStepsProps } from '@/types/OcrTemplate';
 import { useCallback, useState } from 'react'
-import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 
 type BatchFormState = {
     siteGroups: AppChannel[];

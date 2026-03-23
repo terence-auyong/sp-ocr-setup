@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import Spinner from "@/components/Spinner";
+import Spinner from "@/components/common/Spinner";
 import { fetchUom } from "@/services/uom";
-import PreviewUom from "@/components/PreviewUom";
+import PreviewUom from "@/components/uom/PreviewUom";
 import { useQuery } from "@tanstack/react-query";
 import { LuSearch } from "react-icons/lu";
 
@@ -56,7 +56,7 @@ const UomOcr = () => {
     };
 
     return (
-        <div className="flex flex-col p-4 h-200 w-full max-w-5xl mx-auto bg-[#FAFAFA] rounded shadow">
+        <div className="flex flex-col p-4 h-200 w-full max-w-5xl mx-auto bg-[#FAFAFA] rounded-sm shadow">
             {showPreview && (
                 <PreviewUom 
                     onClose={() => setShowPreview(false)}

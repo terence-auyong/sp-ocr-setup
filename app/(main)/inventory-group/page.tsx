@@ -1,8 +1,8 @@
 "use client"
 import { useEffect, useRef, useState } from 'react'
-import Spinner from '@/components/Spinner';
+import Spinner from '@/components/common/Spinner';
 import { fetchInventoryArea, fetchInventoryGroup } from '@/services/inventory';
-import PreviewInventoryGroup from '@/components/PreviewInventoryGroup';
+import PreviewInventoryGroup from '@/components/inventory-group/PreviewInventoryGroup';
 import { useQuery } from '@tanstack/react-query';
 import { LuSearch } from 'react-icons/lu';
 

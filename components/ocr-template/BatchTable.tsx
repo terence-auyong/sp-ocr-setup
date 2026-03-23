@@ -20,13 +20,8 @@ export function BatchTable({
                 <thead>
                     <tr className="bg-gray-100 h-12">
                         <th className="rounded-tl rounded-bl text-left font-bold tracking-wider px-4 py-3">
-                            Site Group
+                            {selectionType === 'store' ? "Store" : "Site Group"}
                         </th>
-                        {selectionType === 'store' && (
-                            <th className="text-left font-bold tracking-wider px-4 py-3">
-                                Stores
-                            </th>
-                        )}
                         <th className="text-left font-bold tracking-wider px-4 py-3">
                             Max Scan
                         </th>
@@ -52,24 +47,20 @@ export function BatchTable({
                                     className={`transition-colors ${isEditing ? 'bg-blue-50' : 'hover:bg-gray-50/60'}`}
                                 >
                                     {/* Site Group mode: show site group names. Store mode: channel_id=0 so show "All" */}
-                                    <td className="px-4 py-3">
-                                        {selectionType === 'siteGroup' ? (
+                                    {selectionType === 'siteGroup' && (
+                                        <td className="px-4 py-3">
                                             <div className="flex flex-wrap gap-1">
                                                 {batch.groups.map(g => (
                                                     <span
                                                         key={g.siteGroup.id}
                                                         className="inline-flex items-center bg-indigo-50 text-indigo-700 font-medium px-3 py-1 rounded-md border border-indigo-100"
                                                     >
-                                                        {g.siteGroup.name}
+                                                        {`${g.siteGroup.code} - ${g.siteGroup.name}`}
                                                     </span>
                                                 ))}
                                             </div>
-                                        ) : (
-                                            <span className="inline-flex items-center bg-indigo-50 text-indigo-700 font-medium px-3 py-1 rounded-md border border-indigo-100">
-                                                All
-                                            </span>
-                                        )}
-                                    </td>
+                                        </td>
+                                    )}
 
                                     {/* Store mode: show selected stores */}
                                     {selectionType === 'store' && (
@@ -83,7 +74,7 @@ export function BatchTable({
                                                             key={s.id}
                                                             className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded border border-gray-200"
                                                         >
-                                                            {s.name}
+                                                            {`${s.store_code} - ${s.name}`}
                                                         </span>
                                                     ))}
                                                 </div>

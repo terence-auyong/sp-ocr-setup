@@ -32,6 +32,8 @@ export const POST = async (req: NextRequest) => {
         //   ...
         // ]
 
+        console.log(JSON.stringify(payload, null, 2));
+
         if (!ocrCode || !ocrName || !extendedModuleCodes?.length) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }

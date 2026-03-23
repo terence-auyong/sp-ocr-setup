@@ -2,15 +2,16 @@
 import { useAuth } from "@/contexts/AuthProvider";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import Sidebar from "@/components/SideBar";
+import Sidebar from "@/components/common/SideBar";
 import { STAGE_COOKIE_NAME } from "@/lib/edtr-stage-constants";
 import { getStoredUser, StoredUser } from "@/lib/auth-storage";
-import Spinner from "@/components/Spinner";
+import Spinner from "@/components/common/Spinner";
 
 const pages = [
     { label: "OCR Template", href: "/", requiresAuth: true },
     { label: "Inventory Group", href: "/inventory-group", requiresAuth: true },
     { label: "Unit of Measure", href: "/uom", requiresAuth: true },
+    { label: "OCR Mapping Upload", href: "/ocr-mapping-upload", requiresAuth: true },
 ];
 
 function getStageFromCookie(): "qa" | "dev" | "uat" | "prod" {

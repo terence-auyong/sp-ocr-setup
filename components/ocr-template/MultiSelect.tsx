@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from 'lucide-react';
 
 export function MultiSelect({ items, selected, onChange, placeholder, hasError, disabled, isLoading, selectionType }: {
-    items: { id: number; name: string }[];
+    items: { id: number; code?: string; store_code?: string; name: string }[];
     isLoading: boolean;
-    selected: { id: number; name: string }[];
+    selected: { id: number; code?: string; store_code?: string; name: string }[];
     onChange: (items: any[]) => void;
     placeholder: string;
     hasError?: boolean;
@@ -79,7 +79,11 @@ export function MultiSelect({ items, selected, onChange, placeholder, hasError, 
                         ) : (
                             selected.map(s => (
                                 <span key={s.id} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 font-medium px-2 py-0.5 rounded-md border border-blue-200">
-                                    {s.name}
+                                    {`${
+                                    selectionType === 'siteGroup'
+                                        ? s.code
+                                        : s.store_code
+                                    } - ${s.name}`}
                                     {!disabled && (
                                         <button onClick={(e) => remove(s.id, e)} className="ml-0.5 text-blue-400 hover:text-blue-700">
                                             <X size={12} />
@@ -143,7 +147,15 @@ export function MultiSelect({ items, selected, onChange, placeholder, hasError, 
                                             ${isSelected ? 'bg-blue-500 border-blue-500 text-white' : 'border-gray-300'}`}>
                                             {isSelected && <Check size={12} strokeWidth={3} />}
                                         </span>
-                                        {item.id === 0 ? `ALL ${selectionType === 'siteGroup' ? "SITE GROUPS" : "STORES"}` : item.name}
+                                        {
+                                            item.id === 0
+                                                ? `ALL ${selectionType === 'siteGroup' ? "SITE GROUPS" : "STORES"}`
+                                                : `${
+                                                    selectionType === 'siteGroup'
+                                                    ? item.code
+                                                    : item.store_code
+                                                } - ${item.name}`
+                                        }
                                     </li>
                                 );
                             })

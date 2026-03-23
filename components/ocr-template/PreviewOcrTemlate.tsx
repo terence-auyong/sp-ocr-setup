@@ -1,9 +1,9 @@
-import { useOcrTemplate } from '../contexts/OcrTemplateContexts';
+import { useOcrTemplate } from '../../contexts/OcrTemplateContexts';
 import { useState } from 'react';
 import generateOcrTemplateScript from '@/utils/generateOcrTemplateScript';
-import { fetchOcrSetup } from '../services/ocr-setup';
+import { fetchOcrSetup } from '../../services/ocr-setup';
 import { LuCircleCheckBig } from "react-icons/lu";
-import { BatchesPreviewTable } from './sitegroup-store/BatchesPreviewTable';
+import { BatchesPreviewTable } from './BatchesPreviewTable';
 
 type PreviewChangesProps = {
     setCurrentStep: React.Dispatch<React.SetStateAction<number>>;
