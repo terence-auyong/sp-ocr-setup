@@ -9,6 +9,7 @@ import { fetchAppModuleExtended } from "@/services/app-module-extended";
 import { fetchAppChannel } from "@/services/app-channel";
 import { fetchAppStore } from "@/services/app-store";
 import { Upload, Download } from "lucide-react";
+import ExcelJS from "exceljs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,11 +97,14 @@ interface RawPayload {
     ocrName: string;
     description: string;
     ocrApiName: string;
-    extendedModuleNames: string[];
+    moduleInventory: boolean;
+    moduleNearExpiry: boolean;
+    moduleOsa: boolean;
+    moduleShareOfShelf: boolean;
     batches: RawBatch[];
     batchMap: Record<string, RawBatch>;
     rowNumbers: number[];
-    emptyLocationRows: number[]; 
+    emptyLocationRows: number[];
 }
 
 // ─── Auto-derive module name from OCR code ────────────────────────────────────
@@ -117,9 +121,11 @@ function rowsToRaw(rows: Record<string, unknown>[]): RawPayload[] {
     const byTemplate: Record<string, RawPayload> = {};
     let batchCounter = 0;
 
+    const isY = (val: unknown) => String(val ?? "").trim().toLowerCase() === "y";
+
     for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
-        const excelRowNumber = i + 4;
+        const excelRowNumber = i + 5;
 
         const code = String(r["OCR Code"] ?? "").trim();
         const name = String(r["Name"] ?? "").trim();
@@ -132,10 +138,10 @@ function rowsToRaw(rows: Record<string, unknown>[]): RawPayload[] {
                 ocrName: name,
                 description: String(r["Description"] ?? "").trim(),
                 ocrApiName: String(r["OCR API"] ?? "").trim(),
-                extendedModuleNames: String(r["Module Code"] ?? "")
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
+                moduleInventory: isY(r["Inventory"]),
+                moduleNearExpiry: isY(r["Near Expiry"]),
+                moduleOsa: isY(r["OSA"]),
+                moduleShareOfShelf: isY(r["Share of Shelf"]),
                 batches: [],
                 batchMap: {},
                 rowNumbers: [],
@@ -168,28 +174,27 @@ function rowsToRaw(rows: Record<string, unknown>[]): RawPayload[] {
             .map((s) => s.trim())
             .filter(Boolean);
 
-        // ── Both site group and store code are empty → error ──
         if (siteGroupCodes.length === 0 && storeCodes.length === 0) {
             tpl.emptyLocationRows.push(excelRowNumber);
             continue;
         }
 
         if (storeCodes.length > 0) {
-            // Store present → always store-only group, site group is ignored
-            const EMPTY_SITE_GROUP_KEY = "__NO_SITE_GROUP__";
-            if (!batch.groupMap[EMPTY_SITE_GROUP_KEY]) {
-                const group: RawGroup = { siteGroupCode: EMPTY_SITE_GROUP_KEY, storeCodes: [] };
-                batch.groupMap[EMPTY_SITE_GROUP_KEY] = group;
-                batch.groups.push(group);
-            }
-            const group = batch.groupMap[EMPTY_SITE_GROUP_KEY];
-            for (const storeCode of storeCodes) {
-                if (!group.storeCodes.includes(storeCode)) {
-                    group.storeCodes.push(storeCode);
+            // Store present — group by site group code so we can validate channel membership
+            for (const siteGroupCode of siteGroupCodes.length > 0 ? siteGroupCodes : ["__NO_SITE_GROUP__"]) {
+                if (!batch.groupMap[siteGroupCode]) {
+                    const group: RawGroup = { siteGroupCode, storeCodes: [] };
+                    batch.groupMap[siteGroupCode] = group;
+                    batch.groups.push(group);
+                }
+                const group = batch.groupMap[siteGroupCode];
+                for (const storeCode of storeCodes) {
+                    if (!group.storeCodes.includes(storeCode)) {
+                        group.storeCodes.push(storeCode);
+                    }
                 }
             }
         } else {
-            // No stores → site group only
             for (const siteGroupCode of siteGroupCodes) {
                 if (!batch.groupMap[siteGroupCode]) {
                     const group: RawGroup = { siteGroupCode, storeCodes: [] };
@@ -208,6 +213,7 @@ function rowsToRaw(rows: Record<string, unknown>[]): RawPayload[] {
 interface ResolveResult {
     payloads: OcrPayload[];
     errors: string[];
+    rowErrorMap: Record<number, string[]>;
 }
 
 function resolvePayloads(
@@ -219,11 +225,32 @@ function resolvePayloads(
     allStores: AppStore[],
 ): ResolveResult {
     const errors: string[] = [];
+    const rowErrorMap: Record<number, string[]> = {};
     const payloads: OcrPayload[] = [];
 
     const ALLOWED_OCR_CODES = ["OCR Inside INV", "Multiple OCR Module"];
     const ALLOWED_OCR_APIS = ["analyze document", "detect text"];
-    const MULTIPLE_OCR_ALLOWED = ["inventory", "near expiry", "osa", "share of shelf"];
+
+    const ocrApiMap = new Map(ocrApis.map((a) => [a.name.toLowerCase(), a]));
+    const moduleMap = new Map(modules.map((m) => [m.name.toLowerCase(), m]));
+    const extModuleMap = new Map(extModules.map((m) => [m.name.toLowerCase(), m]));
+    const channelMap = new Map(
+        allChannels.filter((c) => c?.code != null).map((c) => [c.code.toLowerCase(), c])
+    );
+    const storeMap = new Map(
+        allStores.filter((s) => s?.store_code != null).map((s) => [s.store_code.toLowerCase(), s])
+    );
+
+    /**
+     * Helper to map an error message to specific Excel row numbers
+     * for the "Download Error File" feature.
+     */
+    const addErrorToRows = (rowNums: number[], msg: string) => {
+        rowNums.forEach(num => {
+            if (!rowErrorMap[num]) rowErrorMap[num] = [];
+            rowErrorMap[num].push(msg);
+        });
+    };
 
     for (const raw of raws) {
         const label = raw.ocrName || raw.ocrCode;
@@ -232,86 +259,125 @@ function resolvePayloads(
             : `rows ${raw.rowNumbers.join(", ")}`;
         const prefix = `[${rowLabel}] "${label}"`;
 
+        // 1. Validate Location Rows (Site Group / Store Code)
         for (const rowNum of raw.emptyLocationRows) {
-            errors.push(`[row ${rowNum}] "${label}": Site Group Code or Store Code is required — at least one must be provided`);
+            const msg = `Site Group Code or Store Code is required — at least one must be provided`;
+            errors.push(`[row ${rowNum}] "${label}": ${msg}`);
+            addErrorToRows([rowNum], msg);
         }
-        
-        // ── OCR Code must be one of the allowed values ──
+
+        // 2. Validate OCR Code
         if (!ALLOWED_OCR_CODES.includes(raw.ocrCode)) {
-            errors.push(`${prefix}: OCR Code "${raw.ocrCode}" is not valid. Allowed values: OCR Inside INV, Multiple OCR Module`);
+            const msg = `OCR Code "${raw.ocrCode}" is not valid. Allowed: OCR Inside INV, Multiple OCR Module`;
+            errors.push(`${prefix}: ${msg}`);
+            addErrorToRows(raw.rowNumbers, msg);
         }
 
-        if (!raw.ocrName) errors.push(`${prefix}: Name is empty`);
-        if (!raw.batches.length) errors.push(`${prefix}: no batches found`);
+        // 3. Basic Field Validations
+        if (!raw.ocrName) {
+            const msg = "Name is empty";
+            errors.push(`${prefix}: ${msg}`);
+            addErrorToRows(raw.rowNumbers, msg);
+        }
+        if (!raw.description) {
+            const msg = "Description is empty";
+            errors.push(`${prefix}: ${msg}`);
+            addErrorToRows(raw.rowNumbers, msg);
+        }
+        if (!raw.batches.length) {
+            const msg = "No batches found";
+            errors.push(`${prefix}: ${msg}`);
+            addErrorToRows(raw.rowNumbers, msg);
+        }
 
+        // 4. Max Scan Validation
         for (const batch of raw.batches) {
             if (!Number.isFinite(batch.maxScan) || batch.maxScan <= 0) {
-                errors.push(`${prefix}: Max Scan must be a positive number (value: ${batch.maxScan})`);
+                const msg = `Max Scan must be a positive number (value: ${batch.maxScan})`;
+                errors.push(`${prefix}: ${msg}`);
+                addErrorToRows(raw.rowNumbers, msg);
             }
         }
 
-        // ── OCR API (matched by name) ──
-        const ocrApi = raw.ocrApiName
-            ? (ocrApis.find((a) => a.name.toLowerCase() === raw.ocrApiName.toLowerCase()) ?? null)
-            : null;
+        // 5. OCR API Resolution
+        const ocrApi = raw.ocrApiName ? (ocrApiMap.get(raw.ocrApiName.toLowerCase()) ?? null) : null;
         if (raw.ocrApiName && !ALLOWED_OCR_APIS.includes(raw.ocrApiName.toLowerCase())) {
-            errors.push(`${prefix}: OCR API "${raw.ocrApiName}" is not valid. Allowed values: Analyze Document, Detect Text`);
+            const msg = `OCR API "${raw.ocrApiName}" is not valid.`;
+            errors.push(`${prefix}: ${msg}`);
+            addErrorToRows(raw.rowNumbers, msg);
         } else if (raw.ocrApiName && !ocrApi) {
-            errors.push(`${prefix}: OCR API "${raw.ocrApiName}" not found`);
+            const msg = `OCR API "${raw.ocrApiName}" not found in database`;
+            errors.push(`${prefix}: ${msg}`);
+            addErrorToRows(raw.rowNumbers, msg);
         }
 
-        // ── Module: auto-derived from OCR Code (hidden from user) ──
+        // 6. Module Resolution (Auto-derived)
         const derivedModuleName = deriveModuleName(raw.ocrCode);
         const moduleCode = derivedModuleName
-            ? (modules.find((m) => m.name === derivedModuleName) ?? null)
+            ? (moduleMap.get(derivedModuleName.toLowerCase()) ?? null)
             : null;
         if (derivedModuleName && !moduleCode) {
-            errors.push(`${prefix}: auto-derived module "${derivedModuleName}" not found in module list`);
+            const msg = `Auto-derived module "${derivedModuleName}" not found in list`;
+            errors.push(`${prefix}: ${msg}`);
+            addErrorToRows(raw.rowNumbers, msg);
         }
 
-        // ── Extended modules: user fills "Module Code" column ──
+        // 7. Extended Modules (Y/N Flags)
         const extendedModuleCodes: AppModule[] = [];
 
         if (raw.ocrCode === "OCR Inside INV") {
-            const names = raw.extendedModuleNames;
-            if (names.length === 0) {
-                errors.push(`${prefix}: Module Code is required. Allowed value: Inventory`);
-            } else if (names.length !== 1 || names[0].toLowerCase() !== "inventory") {
-                errors.push(`${prefix}: Module Code "${names.join(", ")}" is not valid for OCR Inside INV. Only allowed value: Inventory`);
+            if (!raw.moduleInventory) {
+                const msg = "Inventory must be Y for OCR Inside INV";
+                errors.push(`${prefix}: ${msg}`);
+                addErrorToRows(raw.rowNumbers, msg);
             } else {
-                const match = extModules.find((m) => m.name.toLowerCase() === "inventory");
+                const match = extModuleMap.get("inventory");
                 if (match) extendedModuleCodes.push(match);
-                else errors.push(`${prefix}: "Inventory" not found in extended modules list`);
+                else {
+                    const msg = '"Inventory" not found in system modules';
+                    errors.push(`${prefix}: ${msg}`);
+                    addErrorToRows(raw.rowNumbers, msg);
+                }
             }
         } else if (raw.ocrCode === "Multiple OCR Module") {
-            if (!raw.extendedModuleNames.length) {
-                errors.push(`${prefix}: At least one Module Code is required. Allowed values: Inventory, Near Expiry, OSA, Share of Shelf`);
+            const selected = [
+                { key: "inventory", flag: raw.moduleInventory },
+                { key: "near expiry", flag: raw.moduleNearExpiry },
+                { key: "osa", flag: raw.moduleOsa },
+                { key: "share of shelf", flag: raw.moduleShareOfShelf },
+            ].filter((m) => m.flag);
+
+            if (selected.length === 0) {
+                const msg = "At least one module must be Y (Inventory, Near Expiry, OSA, or Share of Shelf)";
+                errors.push(`${prefix}: ${msg}`);
+                addErrorToRows(raw.rowNumbers, msg);
             } else {
-                for (const name of raw.extendedModuleNames) {
-                    if (!MULTIPLE_OCR_ALLOWED.includes(name.toLowerCase())) {
-                        errors.push(`${prefix}: Module Code "${name}" is not valid. Allowed values: Inventory, Near Expiry, OSA, Share of Shelf`);
-                    } else {
-                        const match = extModules.find((m) => m.name.toLowerCase() === name.toLowerCase());
-                        if (match) extendedModuleCodes.push(match);
-                        else errors.push(`${prefix}: "${name}" not found in extended modules list`);
+                for (const { key } of selected) {
+                    const match = extModuleMap.get(key);
+                    if (match) extendedModuleCodes.push(match);
+                    else {
+                        const msg = `"${key}" module not found in system`;
+                        errors.push(`${prefix}: ${msg}`);
+                        addErrorToRows(raw.rowNumbers, msg);
                     }
                 }
             }
         }
 
-        // ── Batches: resolve Site Group Code → SiteGroup, Store Code → Store ──
+        // 8. Site Group and Store Membership Resolution
         const resolvedBatches: Batch[] = raw.batches.map((batch) => {
             const resolvedGroups: Group[] = batch.groups.map((rawGroup) => {
                 const { siteGroupCode } = rawGroup;
-
                 const isNoSiteGroup = siteGroupCode === "__NO_SITE_GROUP__";
 
                 const matchedChannel = isNoSiteGroup
                     ? null
-                    : allChannels.find((c) => c?.code?.toLowerCase() === siteGroupCode?.toLowerCase());
+                    : (channelMap.get(siteGroupCode.toLowerCase()) ?? null);
 
                 if (!isNoSiteGroup && !matchedChannel) {
-                    errors.push(`${prefix}: Site Group Code "${siteGroupCode}" not found in site groups`);
+                    const msg = `Site Group Code "${siteGroupCode}" not found`;
+                    errors.push(`${prefix}: ${msg}`);
+                    addErrorToRows(raw.rowNumbers, msg);
                 }
 
                 const siteGroup: SiteGroup = matchedChannel
@@ -320,32 +386,47 @@ function resolvePayloads(
 
                 const resolvedStores: Store[] = [];
                 for (const storeCode of rawGroup.storeCodes) {
-                    const matchedStore = allStores.find(
-                        (s) => s.store_code.toLowerCase() === storeCode.toLowerCase()
-                    );
-                    if (matchedStore) {
-                        resolvedStores.push({
-                            id: matchedStore.id,
-                            store_code: matchedStore.store_code,
-                            name: matchedStore.name,
-                            channel_id: matchedStore.channel_id,
-                        });
-                    } else {
-                        errors.push(`${prefix}: Store Code "${storeCode}" not found in stores`);
+                    const matchedStore = storeMap.get(storeCode.toLowerCase());
+                    if (!matchedStore) {
+                        const msg = `Store Code "${storeCode}" not found`;
+                        errors.push(`${prefix}: ${msg}`);
+                        addErrorToRows(raw.rowNumbers, msg);
+                        continue;
                     }
-                }
 
+                    if (!isNoSiteGroup && matchedChannel) {
+                        if (matchedStore.channel_id !== matchedChannel.id) {
+                            const msg = `Store "${storeCode}" does not belong to Site Group "${siteGroupCode}"`;
+                            errors.push(`${prefix}: ${msg}`);
+                            addErrorToRows(raw.rowNumbers, msg);
+                            continue;
+                        }
+                    }
+
+                    resolvedStores.push({
+                        id: matchedStore.id,
+                        store_code: matchedStore.store_code,
+                        name: matchedStore.name,
+                        channel_id: matchedStore.channel_id,
+                    });
+                }
                 return { siteGroup, stores: resolvedStores };
             });
-
             return { id: batch.id, maxScan: batch.maxScan, groups: resolvedGroups };
         });
 
-        const { batchMap: _bm, ocrApiName: _an, extendedModuleNames: _en, batches: _b, rowNumbers: _rn, emptyLocationRows: _el, ...rest } = raw;
+        // 9. Object Cleaning: Remove internal "raw" helper fields before pushing to payloads
+        const { 
+            batchMap: _bm, ocrApiName: _an, moduleInventory: _mi, 
+            moduleNearExpiry: _mne, moduleOsa: _mo, moduleShareOfShelf: _ms, 
+            batches: _b, rowNumbers: _rn, emptyLocationRows: _el, 
+            ...rest 
+        } = raw as any;
+
         payloads.push({ ...rest, ocrApi, moduleCode, extendedModuleCodes, batches: resolvedBatches });
     }
 
-    return { payloads, errors };
+    return { payloads, errors, rowErrorMap };
 }
 
 // ─── Template columns ─────────────────────────────────────────────────────────
@@ -513,24 +594,44 @@ export default function OcrExcelUploader({
     const [sending, setSending] = useState(false);
     const [results, setResults] = useState<SendResult[] | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
+    const [duration, setDuration] = useState<number | null>(null);
+    const [allRawRows, setAllRawRows] = useState<any[][]>([]);
+    const [rowErrorMap, setRowErrorMap] = useState<Record<number, string[]>>({});
+    const [originalWorkbook, setOriginalWorkbook] = useState<XLSX.WorkBook | null>(null);
+    const [originalFile, setOriginalFile] = useState<File | null>(null);
 
     useEffect(() => {
         if (!rawPayloads) return;
-        if (!appOcrApi.length && !appModule.length) return;
-
-        const { payloads: resolved, errors } = resolvePayloads(
-            rawPayloads,
-            appOcrApi,
-            appModule,
-            appModuleExtended,
-            channels,
-            stores,
+        const { 
+            payloads: resolved, 
+            errors, 
+            rowErrorMap: errorsMap
+        } = resolvePayloads(
+            rawPayloads, 
+            appOcrApi, 
+            appModule, 
+            appModuleExtended, 
+            channels, 
+            stores
         );
         setPayloads(resolved);
         setResolveErrors(errors);
+        setRowErrorMap(errorsMap);
     }, [rawPayloads, appOcrApi, appModule, appModuleExtended, channels, stores]);
 
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        if (sending) {
+            const start = performance.now();
+            interval = setInterval(() => {
+                setDuration(performance.now() - start);
+            }, 100); // Update every 100ms for a "live" feel
+        }
+        return () => clearInterval(interval);
+    }, [sending]);
+
     const handleFile = useCallback((file: File) => {
+        setOriginalFile(file);
         setFileName(file.name);
         setParseError(null);
         setPayloads(null);
@@ -541,28 +642,44 @@ export default function OcrExcelUploader({
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
-                const wb = XLSX.read(e.target?.result, { type: "array" });
+                const wb = XLSX.read(e.target?.result, { type: "array", cellStyles: true });
+                setOriginalWorkbook(wb);
+
                 const targetSheet = "OCR Mapping";
                 const ws = wb.Sheets[targetSheet];
+
                 if (!ws) {
                     setParseError(`Sheet "${targetSheet}" not found. Please use the correct template.`);
                     return;
                 }
+
                 const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
 
-                // Row 1 = headers, rows 2–3 = instructions → skip
-                const [headers, , , ...dataRows] = allRows;
+                setAllRawRows(allRows);
+
+                const mainHeaders = allRows[0] as string[];
+                const subHeaderRow = allRows[3] as string[]; 
+                const dataRows = allRows.slice(4);             
+
+                const headers = mainHeaders.map((h, i) => {
+                    const main = String(h || "").trim();
+                    const sub = String(subHeaderRow[i] || "").trim();
+                    
+                    const finalHeader = sub || main; 
+
+                    return finalHeader;
+                });
 
                 const rows = dataRows
                     .map((row) =>
-                        (headers as string[]).reduce<Record<string, unknown>>((acc, key, i) => {
-                            acc[key] = (row as unknown[])[i] ?? "";
+                        headers.reduce<Record<string, unknown>>((acc, key, i) => {
+                            if (key) acc[key] = (row as unknown[])[i] ?? "";
                             return acc;
                         }, {})
                     )
                     .filter((row) => Object.values(row).some((v) => String(v).trim() !== ""));
 
-                if (!rows.length) { setParseError("No data rows found in the sheet."); return; }
+                if (!rows.length) { setParseError("No data rows found starting at Row 5."); return; }
 
                 const raws = rowsToRaw(rows);
                 setRowCount(rows.length);
@@ -574,10 +691,59 @@ export default function OcrExcelUploader({
         reader.readAsArrayBuffer(file);
     }, []);
 
+    const downloadErrorFile = async () => {
+        if (!fileName) return;
+
+        const arrayBuffer = await originalFile?.arrayBuffer();
+
+        if (!arrayBuffer) {
+            console.error("File content could not be read.");
+            return;
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(arrayBuffer);
+
+        const ws = workbook.getWorksheet("OCR Mapping");
+        if (!ws) return;
+
+        const lastCol = ws.columnCount + 1;
+
+        // Add header in Row 1
+        const headerCell = ws.getRow(1).getCell(lastCol);
+        headerCell.value = "Errors";
+        headerCell.font = { bold: true };
+
+        // Inject errors from rowErrorMap
+        Object.entries(rowErrorMap).forEach(([rowNumStr, errorList]) => {
+            const rowIdx = parseInt(rowNumStr);
+            const cell = ws.getRow(rowIdx).getCell(lastCol);
+            cell.value = errorList.join(" | ");
+            cell.font = { color: { argb: "FFFF0000" }, bold: true };
+        });
+
+        // Auto-fit the error column width
+        ws.getColumn(lastCol).width = 60;
+
+        // Write and download
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], {
+            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `Errors_${fileName}`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
     const handleSend = async () => {
         if (!payloads) return;
         setSending(true);
         setResults(null);
+
+        const startTime = performance.now();
         const out: SendResult[] = [];
 
         for (const payload of payloads) {
@@ -604,6 +770,7 @@ export default function OcrExcelUploader({
     };
 
     const reset = () => {
+        setOriginalFile(null);ƒall
         setPayloads(null);
         setRawPayloads(null);
         setFileName(null);
@@ -639,11 +806,20 @@ export default function OcrExcelUploader({
             )}
 
             {resolveErrors.length > 0 && (
-                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 space-y-1">
-                    <p className="text-xs font-semibold text-red-700 mb-1">Error cannot proceed</p>
-                    {resolveErrors.map((e, i) => (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                    <div className="flex justify-between items-center">
+                        <p className="text-xs font-semibold text-red-700">Error cannot proceed</p>
+                        <button
+                            onClick={downloadErrorFile}
+                            className="flex items-center gap-1 text-xs font-bold bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
+                        >
+                            <Download size={12} />
+                            Download  
+                        </button>
+                    </div>
+                    {/* {resolveErrors.map((e, i) => (
                         <p key={i} className="text-xs text-red-600">✕ {e}</p>
-                    ))}
+                    ))} */}
                 </div>
             )}
 

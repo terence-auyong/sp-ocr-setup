@@ -16,21 +16,8 @@ export const POST = async (req: NextRequest) => {
             ocrApi,
             moduleCode,
             extendedModuleCodes,
-            batches, // BatchEntry[] — each entry has groups[] with its own stores, and a shared maxScan
+            batches,
         } = payload;
-
-        // batches shape (BatchEntry[]):
-        // [
-        //   {
-        //     id,
-        //     maxScan,
-        //     groups: [
-        //       { siteGroup: { id, code, name }, stores: [{ id, store_code, name, channel_id }] },
-        //       ...
-        //     ]
-        //   },
-        //   ...
-        // ]
 
         console.log(JSON.stringify(payload, null, 2));
 
@@ -48,18 +35,18 @@ export const POST = async (req: NextRequest) => {
 
         const [[{ maxVersion }]] = await conn.execute<any[]>(
             `SELECT COALESCE(MAX(dv.version), 0) AS maxVersion
-            FROM app_data_version dv
-            JOIN app_table tbl ON tbl.id = dv.table_id
-            WHERE tbl.name = 'app_ocr_template'`
+             FROM app_data_version dv
+             JOIN app_table tbl ON tbl.id = dv.table_id
+             WHERE tbl.name = 'app_ocr_template'`
         );
 
         const newVersion = maxVersion + 1;
 
         await conn.execute(
             `UPDATE app_data_version dv
-            JOIN app_table tbl ON tbl.id = dv.table_id
-            SET dv.version = ?
-            WHERE tbl.name = 'app_ocr_template'`,
+             JOIN app_table tbl ON tbl.id = dv.table_id
+             SET dv.version = ?
+             WHERE tbl.name = 'app_ocr_template'`,
             [newVersion]
         );
 
@@ -68,79 +55,88 @@ export const POST = async (req: NextRequest) => {
         const [insertTemplateResult] = await conn.execute<ResultSetHeader>(
             `INSERT INTO app_ocr_template
                 (code, name, description, ocr_api_id, module_code, status, version, created_date, modified_by)
-            VALUES (?, ?, ?, ?, ?, 1, ?, NOW(), 'root')`,
+             VALUES (?, ?, ?, ?, ?, 1, ?, NOW(), 'root')`,
             [ocrCode, ocrName, description, ocrApi?.id || null, moduleCode.code, newVersion]
         );
 
         const templateId = insertTemplateResult.insertId;
 
-        // ── 3. Insert extended module mappings ────────────────────────────────
+        // ── 3. Bulk insert extended module mappings ───────────────────────────
 
         if (extendedModuleCodes.length > 0) {
-            const values = extendedModuleCodes
-                .map((m: { code: string }) => `(${templateId}, '${m.code}', 1, ${newVersion}, NOW(), NOW())`)
-                .join(",");
+            const modulePlaceholders = extendedModuleCodes.map(() => `(?, ?, 1, ?, NOW(), 'root')`).join(",");
+            const moduleValues = extendedModuleCodes.flatMap((m: { code: string }) => [
+                templateId,
+                m.code,
+                newVersion,
+            ]);
 
             await conn.execute<ResultSetHeader>(
                 `INSERT INTO app_ocr_template_module_mapping
-                (template_id, module_code, status, version, created_date, modified_by)
-                VALUES ${values}`
+                    (template_id, module_code, status, version, created_date, modified_by)
+                 VALUES ${modulePlaceholders}`,
+                moduleValues
             );
         }
 
-        // ── 4. Loop each BatchEntry → each group → each store pair ────────────
-        //
-        // Site Group mode:
-        //   group.siteGroup.id = real channel id, group.stores = [] → sId defaults to 0
-        //   → inserts: (channel_id=X, store_id=0)
-        //
-        // Store mode:
-        //   group.siteGroup.id = 0 (filter UI only), group.stores = real stores
-        //   → inserts: (channel_id=0, store_id=X) per store
+        // ── 4. Collect all (cId, sId) pairs across all batches ────────────────
+
+        type Pair = { cId: number; sId: number; maxScan: number };
+        const allPairs: Pair[] = [];
 
         for (const batch of batches) {
             const maxScan = Number(batch.maxScan) || 0;
 
             for (const group of batch.groups) {
-                const channelId = group.siteGroup.id; // 0 in store mode
+                const channelId = group.siteGroup.id;
 
-                const pairs: { cId: number; sId: number }[] =
-                    group.stores.length > 0
-                        ? group.stores.map((s: { id: number }) => ({ cId: channelId, sId: s.id }))
-                        : [{ cId: channelId, sId: 0 }]; // site group mode: store_id = 0
-
-                for (const { cId, sId } of pairs) {
-                    // Upsert app_ocr_mapping
-                    const [existing] = await conn.execute(
-                        `SELECT id FROM app_ocr_mapping WHERE store_id = ? AND channel_id = ?`,
-                        [sId, cId]
-                    );
-
-                    if ((existing as any[]).length > 0) {
-                        await conn.execute(
-                            `UPDATE app_ocr_mapping
-                            SET version = ?, status = 1, modified_date = NOW(), modified_by = 'root'
-                            WHERE store_id = ? AND channel_id = ?`,
-                            [newVersion, sId, cId]
-                        );
-                    } else {
-                        await conn.execute(
-                            `INSERT INTO app_ocr_mapping
-                            (channel_id, store_id, created_date, modified_date, modified_by, version, status)
-                            VALUES (?, ?, NOW(), NOW(), 'root', ?, 1)`,
-                            [cId, sId, newVersion]
-                        );
+                if (group.stores.length > 0) {
+                    for (const s of group.stores) {
+                        allPairs.push({ cId: channelId, sId: s.id, maxScan });
                     }
-
-                    // Insert app_ocr_store_limit
-                    await conn.execute(
-                        `INSERT INTO app_ocr_store_limit
-                        (channel_id, store_id, template_id, \`limit\`, start_date, status, created_date, modified_by, version)
-                        VALUES (?, ?, ?, ?, NOW(), 1, NOW(), 'root', ?)`,
-                        [cId, sId, templateId, maxScan, newVersion]
-                    );
+                } else {
+                    allPairs.push({ cId: channelId, sId: 0, maxScan });
                 }
             }
+        }
+
+        // ── 5. Bulk upsert app_ocr_mapping ────────────────────────────────────
+        // INSERT ... ON DUPLICATE KEY UPDATE handles upsert in one query
+        // Requires a UNIQUE KEY on (store_id, channel_id)
+
+        if (allPairs.length > 0) {
+            const mappingPlaceholders = allPairs.map(() => `(?, ?, NOW(), NOW(), 'root', ?, 1)`).join(",");
+            const mappingValues = allPairs.flatMap(({ cId, sId }) => [cId, sId, newVersion]);
+
+            await conn.execute(
+                `INSERT INTO app_ocr_mapping
+                    (channel_id, store_id, created_date, modified_date, modified_by, version, status)
+                 VALUES ${mappingPlaceholders}
+                 ON DUPLICATE KEY UPDATE
+                    version = VALUES(version),
+                    status = 1,
+                    modified_date = NOW(),
+                    modified_by = 'root'`,
+                mappingValues
+            );
+
+            // ── 6. Bulk insert app_ocr_store_limit ────────────────────────────
+
+            const limitPlaceholders = allPairs.map(() => `(?, ?, ?, ?, NOW(), 1, NOW(), 'root', ?)`).join(",");
+            const limitValues = allPairs.flatMap(({ cId, sId, maxScan }) => [
+                cId,
+                sId,
+                templateId,
+                maxScan,
+                newVersion,
+            ]);
+
+            await conn.execute(
+                `INSERT INTO app_ocr_store_limit
+                    (channel_id, store_id, template_id, \`limit\`, start_date, status, created_date, modified_by, version)
+                 VALUES ${limitPlaceholders}`,
+                limitValues
+            );
         }
 
         await conn.commit();
