@@ -4,9 +4,22 @@ export type OcrTemplateStepsProps = {
     stepsLength?: number;
 }
 
-export type AppOcrApi = { id: number; code: string; name: string; }
-export type AppModule = { id: number; code: string; name: string; }
-export type AppModuleExtended = { id: number; code: string; name: string; }
+export type AppOcrApi = { 
+    id: number; 
+    code: string; 
+    name: string; 
+}
+export type AppModule = { 
+    id: number; 
+    code: string; 
+    name: string; 
+}
+
+export type AppModuleExtended = { 
+    id: number; 
+    code: string; 
+    name: string; 
+}
 
 export type AppStore = {
     id: number;
@@ -20,6 +33,31 @@ export type AppChannel = {
     code: string;
     name: string;
 }
+
+export type AppRegion = {
+    id: number;
+    code: string;
+    name: string;
+}
+
+export type AppStoreChannel = {
+    id: number;
+    code: string;
+    name: string;
+}
+
+export type AppStoreGroup = {
+    id: number;
+    code: string;
+    name: string;
+}
+
+export type AppStoreType = {
+    id: number;
+    code: string;
+    name: string;
+}
+
 
 export type SelectionType = 'siteGroup' | 'store';
 

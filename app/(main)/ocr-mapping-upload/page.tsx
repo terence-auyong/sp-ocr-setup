@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
 import { fetchAppOcrApi } from "@/services/app-ocr-api";
@@ -8,52 +8,44 @@ import { fetchAppModule } from "@/services/app-module";
 import { fetchAppModuleExtended } from "@/services/app-module-extended";
 import { fetchAppChannel } from "@/services/app-channel";
 import { fetchAppStore } from "@/services/app-store";
-import { Upload, Download } from "lucide-react";
+import { fetchAppRegion } from "@/services/app-region";
+import { fetchAppStoreChannel } from "@/services/app-store-channel";
+import { fetchAppStoreGroup } from "@/services/app-store-group";
+import { fetchAppStoreType } from "@/services/app-store-type";
+import { Download } from "lucide-react";
 import ExcelJS from "exceljs";
+import { AppModule, AppOcrApi, AppRegion, AppStoreChannel, AppStoreGroup, AppStoreType } from "@/types/OcrTemplate";
+import DropZone from "@/components/ocr-mapping-upload/DropZone";
+import Badge from "@/components/ocr-mapping-upload/Badge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface AppOcrApi {
-    id: number;
-    code: string;
-    name: string;
-}
-
-interface AppModule {
-    id: number;
-    code: string;
-    name: string;
-}
-
-interface AppChannel {
-    id: number;
-    code: string;
-    name: string;
-}
 
 interface AppStore {
     id: number;
     store_code: string;
     name: string;
     channel_id: number;
+    store_type_id: number | null; 
+    store_group_id: number | null;
 }
 
-interface Store {
-    id: number;
-    store_code: string;
-    name: string;
-    channel_id: number;
-}
-
-interface SiteGroup {
+interface AppChannel {
     id: number;
     code: string;
     name: string;
+    store_channel_id: number | null; 
 }
 
 interface Group {
-    siteGroup: SiteGroup;
-    stores: Store[];
+    siteGroup: AppChannel;
+    store: AppStore;
+    region: AppRegion | null;
+    storeChannel: AppStoreChannel | null;
+    storeGroup: AppStoreGroup | null;
+    storeType: AppStoreType | null;
+    startDate: string | null;
+    endDate: string | null;
+    isDelete: number | null;
 }
 
 interface Batch {
@@ -82,7 +74,14 @@ interface SendResult {
 
 interface RawGroup {
     siteGroupCode: string;
-    storeCodes: string[];
+    storeCode: string;
+    regionCode: string;
+    channelCode: string;
+    storeGroupCode: string;
+    storeTypeCode: string;
+    startDate: string | null;
+    endDate: string | null;
+    isDelete: string;
 }
 
 interface RawBatch {
@@ -109,15 +108,39 @@ interface RawPayload {
 
 // ─── Auto-derive module name from OCR code ────────────────────────────────────
 
-function deriveModuleName(ocrCode: string): string {
+const deriveModuleName = (ocrCode: string): string => {
     if (ocrCode === "OCR Inside INV") return "Inventory";
     if (ocrCode === "Multiple OCR Module") return "OCR";
     return "";
 }
 
+const formatExcelDate = (val: any): string | null => {
+    if (val === undefined || val === null || String(val).trim() === "") return "";
+
+    // 1. If it's already a JS Date object
+    if (val instanceof Date) {
+        return val.toISOString().split('T')[0];
+    }
+
+    // 2. If it's a Number (Excel Serial)
+    const num = Number(val);
+    if (!isNaN(num) && typeof val !== 'boolean') {
+        const date = new Date(Math.round((num - 25569) * 86400 * 1000));
+        return date.toISOString().split('T')[0];
+    }
+
+    // 3. If it's a string, validate it strictly
+    const dateAttempt = new Date(val);
+    if (!isNaN(dateAttempt.getTime())) {
+        return dateAttempt.toISOString().split('T')[0];
+    }
+
+    return null; 
+};
+
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
-function rowsToRaw(rows: Record<string, unknown>[]): RawPayload[] {
+const rowsToRaw = (rows: Record<string, unknown>[]): RawPayload[] => {
     const byTemplate: Record<string, RawPayload> = {};
     let batchCounter = 0;
 
@@ -129,12 +152,11 @@ function rowsToRaw(rows: Record<string, unknown>[]): RawPayload[] {
 
         const code = String(r["OCR Code"] ?? "").trim();
         const name = String(r["Name"] ?? "").trim();
-        const templateKey = `${code}__${name}`;
-        if (!code) continue;
+        const templateKey = code ? `${code}__${name}` : `INVALID_ROW_${excelRowNumber}`;
 
         if (!byTemplate[templateKey]) {
             byTemplate[templateKey] = {
-                ocrCode: code,
+                ocrCode: code, // This will be ""
                 ocrName: name,
                 description: String(r["Description"] ?? "").trim(),
                 ocrApiName: String(r["OCR API"] ?? "").trim(),
@@ -144,10 +166,14 @@ function rowsToRaw(rows: Record<string, unknown>[]): RawPayload[] {
                 moduleShareOfShelf: isY(r["Share of Shelf"]),
                 batches: [],
                 batchMap: {},
-                rowNumbers: [],
+                rowNumbers: [excelRowNumber],
                 emptyLocationRows: [],
             };
+        } else {
+            byTemplate[templateKey].rowNumbers.push(excelRowNumber);
         }
+
+        if (!code) continue;
 
         const tpl = byTemplate[templateKey];
         tpl.rowNumbers.push(excelRowNumber);
@@ -164,44 +190,37 @@ function rowsToRaw(rows: Record<string, unknown>[]): RawPayload[] {
 
         const batch = tpl.batchMap[batchKey];
 
-        const siteGroupCodes = String(r["Site Group Code"] ?? "")
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
+        const regionCode = String(r["Region Code"] ?? "").trim();
+        const channelCode = String(r["Store Channel Code"] ?? "").trim();
+        const siteGroupCode = String(r["Site Group Code"] ?? "").trim();
+        const storeCode = String(r["Store Code"] ?? "").trim();
+        const storeGroupCode = String(r["Store Group Code"] ?? "").trim();
+        const storeTypeCode = String(r["Store Type Code"] ?? "").trim();
+        const startDate = formatExcelDate(r["Start Date"]);
+        const endDate = formatExcelDate(r["End Date"]);
+        const isDelete = String(r["Delete"] ?? "").trim();
 
-        const storeCodes = String(r["Store Code"] ?? "")
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-
-        if (siteGroupCodes.length === 0 && storeCodes.length === 0) {
+        if (!siteGroupCode && !storeCode) {
             tpl.emptyLocationRows.push(excelRowNumber);
             continue;
         }
 
-        if (storeCodes.length > 0) {
-            // Store present — group by site group code so we can validate channel membership
-            for (const siteGroupCode of siteGroupCodes.length > 0 ? siteGroupCodes : ["__NO_SITE_GROUP__"]) {
-                if (!batch.groupMap[siteGroupCode]) {
-                    const group: RawGroup = { siteGroupCode, storeCodes: [] };
-                    batch.groupMap[siteGroupCode] = group;
-                    batch.groups.push(group);
-                }
-                const group = batch.groupMap[siteGroupCode];
-                for (const storeCode of storeCodes) {
-                    if (!group.storeCodes.includes(storeCode)) {
-                        group.storeCodes.push(storeCode);
-                    }
-                }
-            }
-        } else {
-            for (const siteGroupCode of siteGroupCodes) {
-                if (!batch.groupMap[siteGroupCode]) {
-                    const group: RawGroup = { siteGroupCode, storeCodes: [] };
-                    batch.groupMap[siteGroupCode] = group;
-                    batch.groups.push(group);
-                }
-            }
+        const groupKey = `row-${excelRowNumber}`;
+
+        if (!batch.groupMap[groupKey]) {
+            const group: RawGroup = {
+                siteGroupCode,
+                storeCode,
+                regionCode,
+                channelCode,
+                storeGroupCode,
+                storeTypeCode,
+                startDate,  
+                endDate,    
+                isDelete, 
+            };
+            batch.groupMap[groupKey] = group;
+            batch.groups.push(group);
         }
     }
 
@@ -216,14 +235,18 @@ interface ResolveResult {
     rowErrorMap: Record<number, string[]>;
 }
 
-function resolvePayloads(
+const resolvePayloads = (
     raws: RawPayload[],
     ocrApis: AppOcrApi[],
     modules: AppModule[],
     extModules: AppModule[],
     allChannels: AppChannel[],
     allStores: AppStore[],
-): ResolveResult {
+    allRegions: AppRegion[],
+    allStoreChannels: AppStoreChannel[],
+    allStoreGroups: AppStoreGroup[],
+    allStoreTypes: AppStoreType[],
+): ResolveResult => {
     const errors: string[] = [];
     const rowErrorMap: Record<number, string[]> = {};
     const payloads: OcrPayload[] = [];
@@ -234,21 +257,38 @@ function resolvePayloads(
     const ocrApiMap = new Map(ocrApis.map((a) => [a.name.toLowerCase(), a]));
     const moduleMap = new Map(modules.map((m) => [m.name.toLowerCase(), m]));
     const extModuleMap = new Map(extModules.map((m) => [m.name.toLowerCase(), m]));
+
     const channelMap = new Map(
         allChannels.filter((c) => c?.code != null).map((c) => [c.code.toLowerCase(), c])
     );
+
     const storeMap = new Map(
         allStores.filter((s) => s?.store_code != null).map((s) => [s.store_code.toLowerCase(), s])
     );
 
-    /**
-     * Helper to map an error message to specific Excel row numbers
-     * for the "Download Error File" feature.
-     */
+    const regionMap = new Map(
+        allRegions.filter((r) => r?.code != null).map((r) => [r.code.toLowerCase(), r])
+    );
+
+    const storeChannelMap = new Map(
+        allStoreChannels.filter((c) => c?.code != null).map((c) => [c.code.toLowerCase(), c])
+    );
+
+    const storeGroupMap = new Map(
+        allStoreGroups.filter((g) => g?.code != null).map((g) => [g.code.toLowerCase(), g])
+    );
+
+    const storeTypeMap = new Map(
+        allStoreTypes.filter((t) => t?.code != null).map((t) => [t.code.toLowerCase(), t])
+    );
+
     const addErrorToRows = (rowNums: number[], msg: string) => {
         rowNums.forEach(num => {
             if (!rowErrorMap[num]) rowErrorMap[num] = [];
-            rowErrorMap[num].push(msg);
+            
+            if (!rowErrorMap[num].includes(msg)) {
+                rowErrorMap[num].push(msg);
+            }
         });
     };
 
@@ -259,11 +299,18 @@ function resolvePayloads(
             : `rows ${raw.rowNumbers.join(", ")}`;
         const prefix = `[${rowLabel}] "${label}"`;
 
-        // 1. Validate Location Rows (Site Group / Store Code)
+        // 1. Validate Location Rows
         for (const rowNum of raw.emptyLocationRows) {
             const msg = `Site Group Code or Store Code is required — at least one must be provided`;
             errors.push(`[row ${rowNum}] "${label}": ${msg}`);
             addErrorToRows([rowNum], msg);
+        }
+
+        if (!raw.ocrCode) {
+            const msg = `OCR Code is required`;
+            errors.push(`[row ${raw.rowNumbers[0]}] ${msg}`);
+            addErrorToRows(raw.rowNumbers, msg);
+            continue;
         }
 
         // 2. Validate OCR Code
@@ -275,15 +322,17 @@ function resolvePayloads(
 
         // 3. Basic Field Validations
         if (!raw.ocrName) {
-            const msg = "Name is empty";
+            const msg = "Name is required";
             errors.push(`${prefix}: ${msg}`);
             addErrorToRows(raw.rowNumbers, msg);
         }
+
         if (!raw.description) {
-            const msg = "Description is empty";
+            const msg = "Description is required";
             errors.push(`${prefix}: ${msg}`);
             addErrorToRows(raw.rowNumbers, msg);
         }
+
         if (!raw.batches.length) {
             const msg = "No batches found";
             errors.push(`${prefix}: ${msg}`);
@@ -300,15 +349,19 @@ function resolvePayloads(
         }
 
         // 5. OCR API Resolution
-        const ocrApi = raw.ocrApiName ? (ocrApiMap.get(raw.ocrApiName.toLowerCase()) ?? null) : null;
-        if (raw.ocrApiName && !ALLOWED_OCR_APIS.includes(raw.ocrApiName.toLowerCase())) {
-            const msg = `OCR API "${raw.ocrApiName}" is not valid.`;
-            errors.push(`${prefix}: ${msg}`);
-            addErrorToRows(raw.rowNumbers, msg);
-        } else if (raw.ocrApiName && !ocrApi) {
-            const msg = `OCR API "${raw.ocrApiName}" not found in database`;
-            errors.push(`${prefix}: ${msg}`);
-            addErrorToRows(raw.rowNumbers, msg);
+        let apiErrorMsg = ""; 
+        const ocrApiNameLower = raw.ocrApiName ? raw.ocrApiName.toLowerCase() : "";
+        const ocrApi = ocrApiMap.get(ocrApiNameLower) ?? null;
+
+        if (!raw.ocrApiName) {
+            apiErrorMsg = "OCR API is required";
+        } else if (!ALLOWED_OCR_APIS.includes(ocrApiNameLower) || !ocrApi) {
+            apiErrorMsg = "OCR API is invalid";
+        }
+
+        if (apiErrorMsg) {
+            errors.push(`${prefix}: ${apiErrorMsg}`);
+            addErrorToRows(raw.rowNumbers, apiErrorMsg);
         }
 
         // 6. Module Resolution (Auto-derived)
@@ -316,6 +369,7 @@ function resolvePayloads(
         const moduleCode = derivedModuleName
             ? (moduleMap.get(derivedModuleName.toLowerCase()) ?? null)
             : null;
+
         if (derivedModuleName && !moduleCode) {
             const msg = `Auto-derived module "${derivedModuleName}" not found in list`;
             errors.push(`${prefix}: ${msg}`);
@@ -326,6 +380,21 @@ function resolvePayloads(
         const extendedModuleCodes: AppModule[] = [];
 
         if (raw.ocrCode === "OCR Inside INV") {
+            // Check for invalid combinations first
+            const invalidModules = [
+                { key: "Near Expiry", flag: raw.moduleNearExpiry },
+                { key: "OSA", flag: raw.moduleOsa },
+                { key: "Share of Shelf", flag: raw.moduleShareOfShelf },
+            ].filter(m => m.flag);
+
+            if (invalidModules.length > 0) {
+                const invalidNames = invalidModules.map(m => m.key).join(", ");
+                const msg = `For "OCR Inside INV", only Inventory is allowed`;
+                errors.push(`${prefix}: ${msg}`);
+                addErrorToRows(raw.rowNumbers, msg);
+            }
+
+            // Standard Inventory requirement check
             if (!raw.moduleInventory) {
                 const msg = "Inventory must be Y for OCR Inside INV";
                 errors.push(`${prefix}: ${msg}`);
@@ -340,6 +409,7 @@ function resolvePayloads(
                 }
             }
         } else if (raw.ocrCode === "Multiple OCR Module") {
+            // For Multiple OCR Module, any combination is fine as long as at least one is selected
             const selected = [
                 { key: "inventory", flag: raw.moduleInventory },
                 { key: "near expiry", flag: raw.moduleNearExpiry },
@@ -364,180 +434,181 @@ function resolvePayloads(
             }
         }
 
-        // 8. Site Group and Store Membership Resolution
         const resolvedBatches: Batch[] = raw.batches.map((batch) => {
             const resolvedGroups: Group[] = batch.groups.map((rawGroup) => {
-                const { siteGroupCode } = rawGroup;
-                const isNoSiteGroup = siteGroupCode === "__NO_SITE_GROUP__";
+                const { 
+                    siteGroupCode, 
+                    storeCode,
+                    regionCode, 
+                    channelCode, 
+                    storeGroupCode, 
+                    storeTypeCode,
+                    startDate,
+                    endDate,
+                    isDelete 
+                } = rawGroup;
 
-                const matchedChannel = isNoSiteGroup
-                    ? null
-                    : (channelMap.get(siteGroupCode.toLowerCase()) ?? null);
+                const getIDZero = <T extends { id: number }>(map: Map<string, T>): T => {
+                    return Array.from(map.values()).find(item => item.id === 0) 
+                        || ({ id: 0, code: "0", name: "Default" } as any);
+                };
 
-                if (!isNoSiteGroup && !matchedChannel) {
-                    const msg = `Site Group Code "${siteGroupCode}" not found`;
+                // ── 1. Resolve Site Group ─────────────────────────────────────────────
+                let siteGroup = getIDZero(channelMap);
+                if (siteGroupCode) {
+                    const found = channelMap.get(siteGroupCode.toLowerCase());
+                    if (!found) {
+                        const msg = `Site Group Code "${siteGroupCode}" not found`;
+                        errors.push(`${prefix}: ${msg}`);
+                        addErrorToRows(raw.rowNumbers, msg); 
+                    } else {
+                        siteGroup = found;
+                    }
+                }
+
+                // ── 2. Resolve Region ─────────────────────────────────────────────────
+                let region = getIDZero(regionMap);
+                if (regionCode) {
+                    const found = regionMap.get(regionCode.toLowerCase());
+                    if (!found) {
+                        const msg = `Region Code "${regionCode}" not found`;
+                        errors.push(`${prefix}: ${msg}`);
+                        addErrorToRows(raw.rowNumbers, msg); 
+                    } else {
+                        region = found;
+                    }
+                }
+
+                // ── 3. Resolve Store Channel ──────────────────────────────────────────
+                let storeChannel = getIDZero(storeChannelMap);
+                if (channelCode) {
+                    const found = storeChannelMap.get(channelCode.toLowerCase());
+                    if (!found) {
+                        const msg = `Store Channel Code "${channelCode}" not found`;
+                        errors.push(`${prefix}: ${msg}`);
+                        addErrorToRows(raw.rowNumbers, msg); 
+                    } else {
+                        storeChannel = found;
+                        if (siteGroup.id > 0 && siteGroup.store_channel_id !== found.id) {
+                            const msg = `Site Group "${siteGroup.code}" does not match Store Channel "${channelCode}"`;
+                            errors.push(`${prefix}: ${msg}`);
+                            addErrorToRows(raw.rowNumbers, msg);
+                        }
+                    }
+                }
+
+                // ── 4. Resolve Store Group ────────────────────────────────────────────
+                let storeGroup = getIDZero(storeGroupMap);
+                if (storeGroupCode) {
+                    const found = storeGroupMap.get(storeGroupCode.toLowerCase());
+                    if (!found) {
+                        const msg = `Store Group Code "${storeGroupCode}" not found`;
+                        errors.push(`${prefix}: ${msg}`);
+                        addErrorToRows(raw.rowNumbers, msg); 
+                    } else {
+                        storeGroup = found;
+                    }
+                }
+
+                // ── 5. Resolve Store Type ─────────────────────────────────────────────
+                let storeType = getIDZero(storeTypeMap);
+                if (storeTypeCode) {
+                    const found = storeTypeMap.get(storeTypeCode.toLowerCase());
+                    if (!found) {
+                        const msg = `Store Type Code "${storeTypeCode}" not found`;
+                        errors.push(`${prefix}: ${msg}`);
+                        addErrorToRows(raw.rowNumbers, msg);
+                    } else {
+                        storeType = found;
+                    }
+                }
+
+                // ── 6. Resolve Stores ─────────────────────────────────────────────────
+                let store = getIDZero(storeMap);
+                if (storeCode) {
+                    const found = storeMap.get(storeCode.toLowerCase());
+                    if (!found) {
+                        const msg = `Store Code "${storeCode}" not found`;
+                        errors.push(`${prefix}: ${msg}`);
+                        addErrorToRows(raw.rowNumbers, msg);
+                        store = { ...store, name: `Not Found: ${storeCode}` }; 
+                    } else {
+                        store = found;
+                        
+                        if (siteGroup.id > 0 && store.channel_id !== siteGroup.id) {
+                            const msg = `Store "${storeCode}" belongs to a different Site Group`;
+                            errors.push(`${prefix}: ${msg}`);
+                            addErrorToRows(raw.rowNumbers, msg); 
+                        }
+
+                        if (storeType.id > 0 && store.store_type_id !== storeType.id) {
+                            const msg = `Store type "${storeCode}" mismatch (expected Type ID: ${storeType.id})`;
+                            errors.push(`${prefix}: ${msg}`);
+                            addErrorToRows(raw.rowNumbers, msg);
+                        }
+
+                        if (storeGroup.id > 0 && store.store_group_id !== storeGroup.id) {
+                            const msg = `Store group "${storeCode}" mismatch (expected Group ID: ${storeGroup.id})`;
+                            errors.push(`${prefix}: ${msg}`);
+                            addErrorToRows(raw.rowNumbers, msg); 
+                        }
+                    }
+                }
+
+                // ── 7. Dates ─────────────────────────────────────────────────
+                if (!startDate && startDate !== "") { 
+                    const msg = "Start Date is invalid";
+                    errors.push(`${prefix}: ${msg}`);
+                    addErrorToRows(raw.rowNumbers, msg);
+                } else if (startDate === "") {
+                    const msg = "Start Date is required";
                     errors.push(`${prefix}: ${msg}`);
                     addErrorToRows(raw.rowNumbers, msg);
                 }
 
-                const siteGroup: SiteGroup = matchedChannel
-                    ? { id: matchedChannel.id, code: matchedChannel.code, name: matchedChannel.name }
-                    : { id: 0, code: "", name: "" };
-
-                const resolvedStores: Store[] = [];
-                for (const storeCode of rawGroup.storeCodes) {
-                    const matchedStore = storeMap.get(storeCode.toLowerCase());
-                    if (!matchedStore) {
-                        const msg = `Store Code "${storeCode}" not found`;
-                        errors.push(`${prefix}: ${msg}`);
-                        addErrorToRows(raw.rowNumbers, msg);
-                        continue;
-                    }
-
-                    if (!isNoSiteGroup && matchedChannel) {
-                        if (matchedStore.channel_id !== matchedChannel.id) {
-                            const msg = `Store "${storeCode}" does not belong to Site Group "${siteGroupCode}"`;
-                            errors.push(`${prefix}: ${msg}`);
-                            addErrorToRows(raw.rowNumbers, msg);
-                            continue;
-                        }
-                    }
-
-                    resolvedStores.push({
-                        id: matchedStore.id,
-                        store_code: matchedStore.store_code,
-                        name: matchedStore.name,
-                        channel_id: matchedStore.channel_id,
-                    });
+                if (endDate === null) {
+                    const msg = "End Date is invalid";
+                    errors.push(`${prefix}: ${msg}`);
+                    addErrorToRows(raw.rowNumbers, msg);
                 }
-                return { siteGroup, stores: resolvedStores };
+
+                // ── 8. Delete ─────────────────────────────────────────────────
+                const deleteVal = isDelete.trim().toUpperCase();
+    
+                if (deleteVal !== "Y" && deleteVal !== "") {
+                    const msg = `Delete value is invalid`;
+                    errors.push(`${prefix}: ${msg}`);
+                    addErrorToRows(raw.rowNumbers, msg);
+                }
+
+                return { 
+                    siteGroup, 
+                    store, 
+                    region, 
+                    storeChannel, 
+                    storeGroup, 
+                    storeType,
+                    startDate,
+                    endDate,
+                    isDelete: isDelete?.toUpperCase() === "Y" ? 0 : 1 
+                };
             });
+
             return { id: batch.id, maxScan: batch.maxScan, groups: resolvedGroups };
         });
 
-        // 9. Object Cleaning: Remove internal "raw" helper fields before pushing to payloads
-        const { 
-            batchMap: _bm, ocrApiName: _an, moduleInventory: _mi, 
-            moduleNearExpiry: _mne, moduleOsa: _mo, moduleShareOfShelf: _ms, 
-            batches: _b, rowNumbers: _rn, emptyLocationRows: _el, 
-            ...rest 
+        // 9. Clean internal raw fields before pushing
+        const {
+            batchMap: _bm, ocrApiName: _an, moduleInventory: _mi,
+            moduleNearExpiry: _mne, moduleOsa: _mo, moduleShareOfShelf: _ms,
+            batches: _b, rowNumbers: _rn, emptyLocationRows: _el,
+            ...rest
         } = raw as any;
 
         payloads.push({ ...rest, ocrApi, moduleCode, extendedModuleCodes, batches: resolvedBatches });
     }
 
     return { payloads, errors, rowErrorMap };
-}
-
-// ─── Template columns ─────────────────────────────────────────────────────────
-
-const TEMPLATE_COLUMNS = [
-    "OCR Code",
-    "Name",
-    "Description",
-    "OCR API",
-    "Module Code",
-    "Site Group Code",
-    "Store Code",
-    "Max Scan",
-];
-
-// ─── Download template ────────────────────────────────────────────────────────
-
-function downloadTemplate() {
-    const link = document.createElement("a");
-    link.href = "/templates/OCR_Mapping_Form.xlsx";
-    link.download = "OCR_Mapping_Form.xlsx";
-    link.click();
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function Badge({
-    children,
-    variant = "default",
-}: {
-    children: React.ReactNode;
-    variant?: "default" | "blue" | "green" | "amber" | "red";
-}) {
-    const styles: Record<string, string> = {
-        default: "bg-gray-100 text-gray-700",
-        blue: "bg-blue-50 text-blue-700",
-        green: "bg-green-50 text-green-700",
-        amber: "bg-amber-50 text-amber-700",
-        red: "bg-red-50 text-red-700",
-    };
-    return (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${styles[variant]}`}>
-            {children}
-        </span>
-    );
-}
-
-function DropZone({
-    onFile,
-    disabled,
-    fileName,
-}: {
-    onFile: (f: File) => void;
-    disabled?: boolean;
-    fileName: string | null;
-}) {
-    const [dragging, setDragging] = useState(false);
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    const handleDrop = useCallback(
-        (e: React.DragEvent) => {
-            e.preventDefault();
-            setDragging(false);
-            const file = e.dataTransfer.files[0];
-            if (file) onFile(file);
-        },
-        [onFile]
-    );
-
-    return (
-        <div
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => !disabled && inputRef.current?.click()}
-            className={`
-                w-160 h-80 relative border-2 border-dashed rounded-lg px-6 py-10 text-center transition-colors
-                ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
-                ${dragging ? "border-blue-400 bg-blue-50" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"}
-            `}
-        >
-            <input
-                ref={inputRef}
-                type="file"
-                accept=".xlsx"
-                className="hidden"
-                onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) { onFile(f); e.target.value = ""; }
-                }}
-            />
-            <div className="flex flex-col items-center justify-center h-full gap-2">
-                {fileName ? (
-                    <div className="space-y-1 flex flex-col items-center">
-                        <Upload size={40} color="gray" />
-                        <p className="text-sm font-bold text-blue-600">{fileName}</p>
-                        <p className="text-xs text-gray-500 italic">Click or drag to replace</p>
-                    </div>
-                ) : (
-                    <>
-                        <Upload size={40} color="gray" />
-                        <p className="text-sm font-medium text-gray-800">
-                            Drop your spreadsheet here, or{" "}
-                            <span className="text-blue-600 underline underline-offset-2">browse</span>
-                        </p>
-                        <p className="text-xs text-gray-400">.xlsx files</p>
-                    </>
-                )}
-            </div>
-        </div>
-    );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -547,10 +618,21 @@ interface OcrExcelUploaderProps {
     onComplete?: (results: SendResult[]) => void;
 }
 
-export default function OcrExcelUploader({
-    apiUrl = "/api/ocr-setup",
+const OcrExcelUploader = ({
+    apiUrl = "/api/ocr-upload",
     onComplete,
-}: OcrExcelUploaderProps) {
+}: OcrExcelUploaderProps) => {
+    const [rawPayloads, setRawPayloads] = useState<RawPayload[] | null>(null);
+    const [payloads, setPayloads] = useState<OcrPayload[] | null>(null);
+    const [resolveErrors, setResolveErrors] = useState<string[]>([]);
+    const [parseError, setParseError] = useState<string | null>(null);
+    const [rowCount, setRowCount] = useState(0);
+    const [sending, setSending] = useState(false);
+    const [results, setResults] = useState<SendResult[] | null>(null);
+    const [fileName, setFileName] = useState<string | null>(null);
+    const [rowErrorMap, setRowErrorMap] = useState<Record<number, string[]>>({});
+    const [originalFile, setOriginalFile] = useState<File | null>(null);
+
     const { data: appOcrApi = [] } = useQuery<AppOcrApi[]>({
         queryKey: ["appOcrApi"],
         queryFn: fetchAppOcrApi,
@@ -586,49 +668,56 @@ export default function OcrExcelUploader({
         gcTime: 10 * 60 * 1000,
     });
 
-    const [rawPayloads, setRawPayloads] = useState<RawPayload[] | null>(null);
-    const [payloads, setPayloads] = useState<OcrPayload[] | null>(null);
-    const [resolveErrors, setResolveErrors] = useState<string[]>([]);
-    const [parseError, setParseError] = useState<string | null>(null);
-    const [rowCount, setRowCount] = useState(0);
-    const [sending, setSending] = useState(false);
-    const [results, setResults] = useState<SendResult[] | null>(null);
-    const [fileName, setFileName] = useState<string | null>(null);
-    const [duration, setDuration] = useState<number | null>(null);
-    const [allRawRows, setAllRawRows] = useState<any[][]>([]);
-    const [rowErrorMap, setRowErrorMap] = useState<Record<number, string[]>>({});
-    const [originalWorkbook, setOriginalWorkbook] = useState<XLSX.WorkBook | null>(null);
-    const [originalFile, setOriginalFile] = useState<File | null>(null);
+    const { data: regions = [] } = useQuery<AppRegion[]>({
+        queryKey: ["app-regions"],
+        queryFn: fetchAppRegion,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    });
+
+    const { data: storeChannels = [] } = useQuery<AppStoreChannel[]>({
+        queryKey: ["app-store-channels"],
+        queryFn: fetchAppStoreChannel,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    });
+
+    const { data: storeGroups = [] } = useQuery<AppStoreGroup[]>({
+        queryKey: ["app-store-groups"],
+        queryFn: fetchAppStoreGroup,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    });
+
+    const { data: storeTypes = [] } = useQuery<AppStoreType[]>({
+        queryKey: ["app-store-types"],
+        queryFn: fetchAppStoreType,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    });
 
     useEffect(() => {
         if (!rawPayloads) return;
-        const { 
-            payloads: resolved, 
-            errors, 
-            rowErrorMap: errorsMap
+        const {
+            payloads: resolved,
+            errors,
+            rowErrorMap: errorsMap,
         } = resolvePayloads(
-            rawPayloads, 
-            appOcrApi, 
-            appModule, 
-            appModuleExtended, 
-            channels, 
-            stores
+            rawPayloads,
+            appOcrApi,
+            appModule,
+            appModuleExtended,
+            channels,
+            stores,
+            regions,      
+            storeChannels,
+            storeGroups,  
+            storeTypes,   
         );
         setPayloads(resolved);
         setResolveErrors(errors);
         setRowErrorMap(errorsMap);
-    }, [rawPayloads, appOcrApi, appModule, appModuleExtended, channels, stores]);
-
-    useEffect(() => {
-        let interval: NodeJS.Timeout;
-        if (sending) {
-            const start = performance.now();
-            interval = setInterval(() => {
-                setDuration(performance.now() - start);
-            }, 100); // Update every 100ms for a "live" feel
-        }
-        return () => clearInterval(interval);
-    }, [sending]);
+    }, [rawPayloads, appOcrApi, appModule, appModuleExtended, channels, stores, regions, storeChannels, storeGroups, storeTypes]);
 
     const handleFile = useCallback((file: File) => {
         setOriginalFile(file);
@@ -643,7 +732,6 @@ export default function OcrExcelUploader({
         reader.onload = (e) => {
             try {
                 const wb = XLSX.read(e.target?.result, { type: "array", cellStyles: true });
-                setOriginalWorkbook(wb);
 
                 const targetSheet = "OCR Mapping";
                 const ws = wb.Sheets[targetSheet];
@@ -655,19 +743,14 @@ export default function OcrExcelUploader({
 
                 const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
 
-                setAllRawRows(allRows);
-
                 const mainHeaders = allRows[0] as string[];
-                const subHeaderRow = allRows[3] as string[]; 
-                const dataRows = allRows.slice(4);             
+                const subHeaderRow = allRows[3] as string[];
+                const dataRows = allRows.slice(4);
 
                 const headers = mainHeaders.map((h, i) => {
                     const main = String(h || "").trim();
                     const sub = String(subHeaderRow[i] || "").trim();
-                    
-                    const finalHeader = sub || main; 
-
-                    return finalHeader;
+                    return sub || main;
                 });
 
                 const rows = dataRows
@@ -695,7 +778,6 @@ export default function OcrExcelUploader({
         if (!fileName) return;
 
         const arrayBuffer = await originalFile?.arrayBuffer();
-
         if (!arrayBuffer) {
             console.error("File content could not be read.");
             return;
@@ -707,25 +789,46 @@ export default function OcrExcelUploader({
         const ws = workbook.getWorksheet("OCR Mapping");
         if (!ws) return;
 
-        const lastCol = ws.columnCount + 1;
+        // 1. Identify the column for Errors (one past the current last column)
+        const lastColNumber = ws.actualColumnCount + 1;
+        const errorCol = ws.getColumn(lastColNumber);
+        errorCol.width = 60;
 
-        // Add header in Row 1
-        const headerCell = ws.getRow(1).getCell(lastCol);
+        // 2. Merge cells 1 through 4 for the Header
+        // .mergeCells(top, left, bottom, right)
+        ws.mergeCells(1, lastColNumber, 4, lastColNumber);
+
+        // 3. Style the merged Header cell
+        const headerCell = ws.getCell(1, lastColNumber);
         headerCell.value = "Errors";
-        headerCell.font = { bold: true };
+        headerCell.font = { bold: true, size: 12 };
+        headerCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        headerCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: '#ff0000' } // Optional: Yellow background to make it stand out
+        };
+        headerCell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+        };
 
-        // Inject errors from rowErrorMap
+        // 4. Populate row-specific errors starting from row 5
         Object.entries(rowErrorMap).forEach(([rowNumStr, errorList]) => {
             const rowIdx = parseInt(rowNumStr);
-            const cell = ws.getRow(rowIdx).getCell(lastCol);
+            const cell = ws.getRow(rowIdx).getCell(lastColNumber);
+            
             cell.value = errorList.join(" | ");
             cell.font = { color: { argb: "FFFF0000" }, bold: true };
+            cell.alignment = { wrapText: true };
+            cell.border = {
+                bottom: { style: 'thin' }
+            };
         });
 
-        // Auto-fit the error column width
-        ws.getColumn(lastCol).width = 60;
-
-        // Write and download
+        // 5. Generate and download the file
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], {
             type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -743,7 +846,6 @@ export default function OcrExcelUploader({
         setSending(true);
         setResults(null);
 
-        const startTime = performance.now();
         const out: SendResult[] = [];
 
         for (const payload of payloads) {
@@ -769,8 +871,15 @@ export default function OcrExcelUploader({
         onComplete?.(out);
     };
 
+    const downloadTemplate = () => {
+        const link = document.createElement("a");
+        link.href = "/templates/OCR_Mapping_Form.xlsx";
+        link.download = "OCR_Mapping_Form.xlsx";
+        link.click();
+    }
+
     const reset = () => {
-        setOriginalFile(null);ƒall
+        setOriginalFile(null);
         setPayloads(null);
         setRawPayloads(null);
         setFileName(null);
@@ -814,12 +923,9 @@ export default function OcrExcelUploader({
                             className="flex items-center gap-1 text-xs font-bold bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
                         >
                             <Download size={12} />
-                            Download  
+                            Download
                         </button>
                     </div>
-                    {/* {resolveErrors.map((e, i) => (
-                        <p key={i} className="text-xs text-red-600">✕ {e}</p>
-                    ))} */}
                 </div>
             )}
 
@@ -828,7 +934,9 @@ export default function OcrExcelUploader({
                     <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="blue">{rowCount} rows</Badge>
                         {resolveErrors.length > 0 && (
-                            <Badge variant="red">{resolveErrors.length} error{resolveErrors.length !== 1 ? "s" : ""}</Badge>
+                            <Badge variant="red">
+                                {resolveErrors.length} error{resolveErrors.length !== 1 ? "s" : ""}
+                            </Badge>
                         )}
                         {results && successCount > 0 && <Badge variant="green">✓ {successCount} sent</Badge>}
                         {results && failCount > 0 && <Badge variant="red">{failCount} failed</Badge>}
@@ -853,3 +961,5 @@ export default function OcrExcelUploader({
         </div>
     );
 }
+
+export default OcrExcelUploader;

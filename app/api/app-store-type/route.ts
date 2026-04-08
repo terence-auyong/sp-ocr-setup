@@ -5,9 +5,8 @@ export const GET = async (req: NextRequest) => {
     const pool = await getPool(req);
     try {
         const [rows] = await pool.query(
-            `SELECT id, store_code, name, channel_id, store_type_id, store_group_id FROM app_store`
-        );
-
+            `SELECT id, code, name FROM app_store_type`
+        )
         return NextResponse.json(rows);
     } catch (err) {
         console.error(err);
