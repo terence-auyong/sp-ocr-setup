@@ -12,7 +12,7 @@ import { fetchAppRegion } from "@/services/app-region";
 import { fetchAppStoreChannel } from "@/services/app-store-channel";
 import { fetchAppStoreGroup } from "@/services/app-store-group";
 import { fetchAppStoreType } from "@/services/app-store-type";
-import { Download } from "lucide-react";
+import { Check, Download } from "lucide-react";
 import ExcelJS from "exceljs";
 import { AppModule, AppOcrApi, AppRegion, AppStoreChannel, AppStoreGroup, AppStoreType } from "@/types/OcrTemplate";
 import DropZone from "@/components/ocr-mapping-upload/DropZone";
@@ -96,10 +96,10 @@ interface RawPayload {
     ocrName: string;
     description: string;
     ocrApiName: string;
-    moduleInventory: boolean;
-    moduleNearExpiry: boolean;
-    moduleOsa: boolean;
-    moduleShareOfShelf: boolean;
+    moduleInventory: string;
+    moduleNearExpiry: string;
+    moduleOsa: string;
+    moduleShareOfShelf: string;
     batches: RawBatch[];
     batchMap: Record<string, RawBatch>;
     rowNumbers: number[];
@@ -160,10 +160,10 @@ const rowsToRaw = (rows: Record<string, unknown>[]): RawPayload[] => {
                 ocrName: name,
                 description: String(r["Description"] ?? "").trim(),
                 ocrApiName: String(r["OCR API"] ?? "").trim(),
-                moduleInventory: isY(r["Inventory"]),
-                moduleNearExpiry: isY(r["Near Expiry"]),
-                moduleOsa: isY(r["OSA"]),
-                moduleShareOfShelf: isY(r["Share of Shelf"]),
+                moduleInventory: String(r["Inventory"] ?? "").trim(),
+                moduleNearExpiry: String(r["Near Expiry"] ?? "").trim(),
+                moduleOsa: String(r["OSA"] ?? "").trim(),
+                moduleShareOfShelf: String(r["Share of Shelf"] ?? "").trim(),
                 batches: [],
                 batchMap: {},
                 rowNumbers: [excelRowNumber],
@@ -292,6 +292,9 @@ const resolvePayloads = (
         });
     };
 
+    const isValidYN = (val: string) => val.toUpperCase() === "Y" || val.toUpperCase() === "N";
+    const isTrue = (val: string) => val.toUpperCase() === "Y";
+
     for (const raw of raws) {
         const label = raw.ocrName || raw.ocrCode;
         const rowLabel = raw.rowNumbers.length === 1
@@ -315,7 +318,7 @@ const resolvePayloads = (
 
         // 2. Validate OCR Code
         if (!ALLOWED_OCR_CODES.includes(raw.ocrCode)) {
-            const msg = `OCR Code "${raw.ocrCode}" is not valid. Allowed: OCR Inside INV, Multiple OCR Module`;
+            const msg = `OCR Code "${raw.ocrCode}" is not valid`;
             errors.push(`${prefix}: ${msg}`);
             addErrorToRows(raw.rowNumbers, msg);
         }
@@ -379,57 +382,61 @@ const resolvePayloads = (
         // 7. Extended Modules (Y/N Flags)
         const extendedModuleCodes: AppModule[] = [];
 
+        const moduleFlags = [
+            { name: "Inventory", val: raw.moduleInventory },
+            { name: "Near Expiry", val: raw.moduleNearExpiry },
+            { name: "OSA", val: raw.moduleOsa },
+            { name: "Share of Shelf", val: raw.moduleShareOfShelf },
+        ];
+
+        // 7a. First, validate that every column has a Y or N (Blocks NNNN or junk)
+        let hasFormatError = false;
+        for (const flag of moduleFlags) {
+            if (!isValidYN(flag.val)) {
+                const msg = `"${flag.name}" must be strictly 'Y' or 'N' (found: "${flag.val || "blank"}")`;
+                errors.push(`${prefix}: ${msg}`);
+                addErrorToRows(raw.rowNumbers, msg);
+                hasFormatError = true;
+            }
+        }
+
+        // 7b. OCR Inside INV Specific Logic
         if (raw.ocrCode === "OCR Inside INV") {
-            // Check for invalid combinations first
-            const invalidModules = [
-                { key: "Near Expiry", flag: raw.moduleNearExpiry },
-                { key: "OSA", flag: raw.moduleOsa },
-                { key: "Share of Shelf", flag: raw.moduleShareOfShelf },
-            ].filter(m => m.flag);
+            // 1. Error if any of the other 3 are 'Y'
+            const invalidModules = moduleFlags
+                .filter(m => m.name !== "Inventory" && isTrue(m.val));
 
             if (invalidModules.length > 0) {
-                const invalidNames = invalidModules.map(m => m.key).join(", ");
-                const msg = `For "OCR Inside INV", only Inventory is allowed`;
+                const names = invalidModules.map(m => m.name).join(", ");
+                const msg = `For "OCR Inside INV", only Inventory is allowed. Remove 'Y' from: ${names}`;
                 errors.push(`${prefix}: ${msg}`);
                 addErrorToRows(raw.rowNumbers, msg);
             }
 
-            // Standard Inventory requirement check
-            if (!raw.moduleInventory) {
-                const msg = "Inventory must be Y for OCR Inside INV";
+            // 2. CRITICAL: Error if Inventory is 'N' (Prevents NNNN)
+            if (isValidYN(raw.moduleInventory) && !isTrue(raw.moduleInventory)) {
+                const msg = "Inventory must be 'Y' for OCR Inside INV";
                 errors.push(`${prefix}: ${msg}`);
                 addErrorToRows(raw.rowNumbers, msg);
-            } else {
+            } 
+
+            // 3. Add to payload only if it's actually 'Y'
+            if (isTrue(raw.moduleInventory)) {
                 const match = extModuleMap.get("inventory");
                 if (match) extendedModuleCodes.push(match);
-                else {
-                    const msg = '"Inventory" not found in system modules';
-                    errors.push(`${prefix}: ${msg}`);
-                    addErrorToRows(raw.rowNumbers, msg);
-                }
             }
-        } else if (raw.ocrCode === "Multiple OCR Module") {
-            // For Multiple OCR Module, any combination is fine as long as at least one is selected
-            const selected = [
-                { key: "inventory", flag: raw.moduleInventory },
-                { key: "near expiry", flag: raw.moduleNearExpiry },
-                { key: "osa", flag: raw.moduleOsa },
-                { key: "share of shelf", flag: raw.moduleShareOfShelf },
-            ].filter((m) => m.flag);
-
-            if (selected.length === 0) {
-                const msg = "At least one module must be Y (Inventory, Near Expiry, OSA, or Share of Shelf)";
+        } 
+        // 7c. Multiple OCR Module Logic
+        else if (raw.ocrCode === "Multiple OCR Module") {
+            const selected = moduleFlags.filter(m => isTrue(m.val));
+            if (!hasFormatError && selected.length === 0) {
+                const msg = "At least one module must be 'Y' for Multiple OCR Module";
                 errors.push(`${prefix}: ${msg}`);
                 addErrorToRows(raw.rowNumbers, msg);
             } else {
-                for (const { key } of selected) {
-                    const match = extModuleMap.get(key);
+                for (const mod of selected) {
+                    const match = extModuleMap.get(mod.name.toLowerCase());
                     if (match) extendedModuleCodes.push(match);
-                    else {
-                        const msg = `"${key}" module not found in system`;
-                        errors.push(`${prefix}: ${msg}`);
-                        addErrorToRows(raw.rowNumbers, msg);
-                    }
                 }
             }
         }
@@ -823,9 +830,6 @@ const OcrExcelUploader = ({
             cell.value = errorList.join(" | ");
             cell.font = { color: { argb: "FFFF0000" }, bold: true };
             cell.alignment = { wrapText: true };
-            cell.border = {
-                bottom: { style: 'thin' }
-            };
         });
 
         // 5. Generate and download the file
@@ -938,8 +942,12 @@ const OcrExcelUploader = ({
                                 {resolveErrors.length} error{resolveErrors.length !== 1 ? "s" : ""}
                             </Badge>
                         )}
-                        {results && successCount > 0 && <Badge variant="green">✓ {successCount} sent</Badge>}
-                        {results && failCount > 0 && <Badge variant="red">{failCount} failed</Badge>}
+                        {results && successCount > 0 && 
+                            <Badge variant="green">
+                                <Check size={16} color="green"/> sent
+                            </Badge>
+                        }
+                        {results && failCount > 0 && <Badge variant="red">failed</Badge>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                         <button
