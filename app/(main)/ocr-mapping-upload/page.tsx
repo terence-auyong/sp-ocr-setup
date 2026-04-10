@@ -808,12 +808,12 @@ const OcrExcelUploader = ({
         // 3. Style the merged Header cell
         const headerCell = ws.getCell(1, lastColNumber);
         headerCell.value = "Errors";
-        headerCell.font = { bold: true, size: 12 };
+        headerCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
         headerCell.alignment = { vertical: 'middle', horizontal: 'center' };
         headerCell.fill = {
             type: 'pattern',
             pattern: 'solid',
-            fgColor: { argb: '#ff0000' } // Optional: Yellow background to make it stand out
+            fgColor: { argb: 'FFFF0000' } 
         };
         headerCell.border = {
             top: { style: 'thin' },
@@ -823,13 +823,21 @@ const OcrExcelUploader = ({
         };
 
         // 4. Populate row-specific errors starting from row 5
-        Object.entries(rowErrorMap).forEach(([rowNumStr, errorList]) => {
+       Object.entries(rowErrorMap).forEach(([rowNumStr, errorList]) => {
             const rowIdx = parseInt(rowNumStr);
             const cell = ws.getRow(rowIdx).getCell(lastColNumber);
             
             cell.value = errorList.join(" | ");
-            cell.font = { color: { argb: "FFFF0000" }, bold: true };
+            // Use ARGB format: 'FFFF0000' (Opaque Red)
+            cell.font = { color: { argb: "FFFF0000" }, bold: true }; 
             cell.alignment = { wrapText: true };
+
+            // FIX: Explicitly set the fill to 'none' for data cells
+            // This prevents them from inheriting the Red Header style
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'none'
+            };
         });
 
         // 5. Generate and download the file
@@ -840,7 +848,7 @@ const OcrExcelUploader = ({
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `Errors_${fileName}`;
+        link.download = fileName;
         link.click();
         URL.revokeObjectURL(url);
     };
