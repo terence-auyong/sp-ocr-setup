@@ -17,6 +17,8 @@ import ExcelJS from "exceljs";
 import { AppModule, AppOcrApi, AppRegion, AppStoreChannel, AppStoreGroup, AppStoreType } from "@/types/OcrTemplate";
 import DropZone from "@/components/ocr-mapping-upload/DropZone";
 import Badge from "@/components/ocr-mapping-upload/Badge";
+import { resolvePayloads } from "@/utils/ocr-upload-mapping/resolvePayloads";
+import { rowsToRaw } from "@/utils/ocr-upload-mapping/rowsToRaw";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,8 +72,7 @@ interface SendResult {
     message?: string;
 }
 
-// ─── Raw parsed shape ─────────────────────────────────────────────────────────
-
+// ─── Lookup resolution ────────────────────────────────────────────────────────
 interface RawGroup {
     siteGroupCode: string;
     storeCode: string;
@@ -82,6 +83,11 @@ interface RawGroup {
     startDate: string | null;
     endDate: string | null;
     isDelete: string;
+    rowNumber: number;
+    moduleInventory: string;
+    moduleNearExpiry: string;
+    moduleOsa: string;
+    moduleShareOfShelf: string;
 }
 
 interface RawBatch {
@@ -106,519 +112,10 @@ interface RawPayload {
     emptyLocationRows: number[];
 }
 
-// ─── Auto-derive module name from OCR code ────────────────────────────────────
-
-const deriveModuleName = (ocrCode: string): string => {
-    if (ocrCode === "OCR Inside INV") return "Inventory";
-    if (ocrCode === "Multiple OCR Module") return "OCR";
-    return "";
+interface RowError {
+    column: string;
+    message: string;
 }
-
-const formatExcelDate = (val: any): string | null => {
-    if (val === undefined || val === null || String(val).trim() === "") return "";
-
-    // 1. If it's already a JS Date object
-    if (val instanceof Date) {
-        return val.toISOString().split('T')[0];
-    }
-
-    // 2. If it's a Number (Excel Serial)
-    const num = Number(val);
-    if (!isNaN(num) && typeof val !== 'boolean') {
-        const date = new Date(Math.round((num - 25569) * 86400 * 1000));
-        return date.toISOString().split('T')[0];
-    }
-
-    // 3. If it's a string, validate it strictly
-    const dateAttempt = new Date(val);
-    if (!isNaN(dateAttempt.getTime())) {
-        return dateAttempt.toISOString().split('T')[0];
-    }
-
-    return null; 
-};
-
-// ─── Parser ───────────────────────────────────────────────────────────────────
-
-const rowsToRaw = (rows: Record<string, unknown>[]): RawPayload[] => {
-    const byTemplate: Record<string, RawPayload> = {};
-    let batchCounter = 0;
-
-    const isY = (val: unknown) => String(val ?? "").trim().toLowerCase() === "y";
-
-    for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        const excelRowNumber = i + 5;
-
-        const code = String(r["OCR Code"] ?? "").trim();
-        const name = String(r["Name"] ?? "").trim();
-        const templateKey = code ? `${code}__${name}` : `INVALID_ROW_${excelRowNumber}`;
-
-        if (!byTemplate[templateKey]) {
-            byTemplate[templateKey] = {
-                ocrCode: code, // This will be ""
-                ocrName: name,
-                description: String(r["Description"] ?? "").trim(),
-                ocrApiName: String(r["OCR API"] ?? "").trim(),
-                moduleInventory: String(r["Inventory"] ?? "").trim(),
-                moduleNearExpiry: String(r["Near Expiry"] ?? "").trim(),
-                moduleOsa: String(r["OSA"] ?? "").trim(),
-                moduleShareOfShelf: String(r["Share of Shelf"] ?? "").trim(),
-                batches: [],
-                batchMap: {},
-                rowNumbers: [excelRowNumber],
-                emptyLocationRows: [],
-            };
-        } else {
-            byTemplate[templateKey].rowNumbers.push(excelRowNumber);
-        }
-
-        if (!code) continue;
-
-        const tpl = byTemplate[templateKey];
-        tpl.rowNumbers.push(excelRowNumber);
-
-        const maxScan = Number(r["Max Scan"]) || 0;
-        const batchKey = `maxScan_${maxScan}`;
-
-        if (!tpl.batchMap[batchKey]) {
-            const generatedId = `batch-${++batchCounter}-${Date.now()}`;
-            const batch: RawBatch = { id: generatedId, maxScan, groups: [], groupMap: {} };
-            tpl.batchMap[batchKey] = batch;
-            tpl.batches.push(batch);
-        }
-
-        const batch = tpl.batchMap[batchKey];
-
-        const regionCode = String(r["Region Code"] ?? "").trim();
-        const channelCode = String(r["Store Channel Code"] ?? "").trim();
-        const siteGroupCode = String(r["Site Group Code"] ?? "").trim();
-        const storeCode = String(r["Store Code"] ?? "").trim();
-        const storeGroupCode = String(r["Store Group Code"] ?? "").trim();
-        const storeTypeCode = String(r["Store Type Code"] ?? "").trim();
-        const startDate = formatExcelDate(r["Start Date"]);
-        const endDate = formatExcelDate(r["End Date"]);
-        const isDelete = String(r["Delete"] ?? "").trim();
-
-        if (!siteGroupCode && !storeCode) {
-            tpl.emptyLocationRows.push(excelRowNumber);
-            continue;
-        }
-
-        const groupKey = `row-${excelRowNumber}`;
-
-        if (!batch.groupMap[groupKey]) {
-            const group: RawGroup = {
-                siteGroupCode,
-                storeCode,
-                regionCode,
-                channelCode,
-                storeGroupCode,
-                storeTypeCode,
-                startDate,  
-                endDate,    
-                isDelete, 
-            };
-            batch.groupMap[groupKey] = group;
-            batch.groups.push(group);
-        }
-    }
-
-    return Object.values(byTemplate);
-}
-
-// ─── Lookup resolution ────────────────────────────────────────────────────────
-
-interface ResolveResult {
-    payloads: OcrPayload[];
-    errors: string[];
-    rowErrorMap: Record<number, string[]>;
-}
-
-const resolvePayloads = (
-    raws: RawPayload[],
-    ocrApis: AppOcrApi[],
-    modules: AppModule[],
-    extModules: AppModule[],
-    allChannels: AppChannel[],
-    allStores: AppStore[],
-    allRegions: AppRegion[],
-    allStoreChannels: AppStoreChannel[],
-    allStoreGroups: AppStoreGroup[],
-    allStoreTypes: AppStoreType[],
-): ResolveResult => {
-    const errors: string[] = [];
-    const rowErrorMap: Record<number, string[]> = {};
-    const payloads: OcrPayload[] = [];
-
-    const ALLOWED_OCR_CODES = ["OCR Inside INV", "Multiple OCR Module"];
-    const ALLOWED_OCR_APIS = ["analyze document", "detect text"];
-
-    const ocrApiMap = new Map(ocrApis.map((a) => [a.name.toLowerCase(), a]));
-    const moduleMap = new Map(modules.map((m) => [m.name.toLowerCase(), m]));
-    const extModuleMap = new Map(extModules.map((m) => [m.name.toLowerCase(), m]));
-
-    const channelMap = new Map(
-        allChannels.filter((c) => c?.code != null).map((c) => [c.code.toLowerCase(), c])
-    );
-
-    const storeMap = new Map(
-        allStores.filter((s) => s?.store_code != null).map((s) => [s.store_code.toLowerCase(), s])
-    );
-
-    const regionMap = new Map(
-        allRegions.filter((r) => r?.code != null).map((r) => [r.code.toLowerCase(), r])
-    );
-
-    const storeChannelMap = new Map(
-        allStoreChannels.filter((c) => c?.code != null).map((c) => [c.code.toLowerCase(), c])
-    );
-
-    const storeGroupMap = new Map(
-        allStoreGroups.filter((g) => g?.code != null).map((g) => [g.code.toLowerCase(), g])
-    );
-
-    const storeTypeMap = new Map(
-        allStoreTypes.filter((t) => t?.code != null).map((t) => [t.code.toLowerCase(), t])
-    );
-
-    const addErrorToRows = (rowNums: number[], msg: string) => {
-        rowNums.forEach(num => {
-            if (!rowErrorMap[num]) rowErrorMap[num] = [];
-            
-            if (!rowErrorMap[num].includes(msg)) {
-                rowErrorMap[num].push(msg);
-            }
-        });
-    };
-
-    const isValidYN = (val: string) => val.toUpperCase() === "Y" || val.toUpperCase() === "N";
-    const isTrue = (val: string) => val.toUpperCase() === "Y";
-
-    for (const raw of raws) {
-        const label = raw.ocrName || raw.ocrCode;
-        const rowLabel = raw.rowNumbers.length === 1
-            ? `row ${raw.rowNumbers[0]}`
-            : `rows ${raw.rowNumbers.join(", ")}`;
-        const prefix = `[${rowLabel}] "${label}"`;
-
-        // 1. Validate Location Rows
-        for (const rowNum of raw.emptyLocationRows) {
-            const msg = `Site Group Code or Store Code is required — at least one must be provided`;
-            errors.push(`[row ${rowNum}] "${label}": ${msg}`);
-            addErrorToRows([rowNum], msg);
-        }
-
-        if (!raw.ocrCode) {
-            const msg = `OCR Code is required`;
-            errors.push(`[row ${raw.rowNumbers[0]}] ${msg}`);
-            addErrorToRows(raw.rowNumbers, msg);
-            continue;
-        }
-
-        // 2. Validate OCR Code
-        if (!ALLOWED_OCR_CODES.includes(raw.ocrCode)) {
-            const msg = `OCR Code "${raw.ocrCode}" is not valid`;
-            errors.push(`${prefix}: ${msg}`);
-            addErrorToRows(raw.rowNumbers, msg);
-        }
-
-        // 3. Basic Field Validations
-        if (!raw.ocrName) {
-            const msg = "Name is required";
-            errors.push(`${prefix}: ${msg}`);
-            addErrorToRows(raw.rowNumbers, msg);
-        }
-
-        if (!raw.description) {
-            const msg = "Description is required";
-            errors.push(`${prefix}: ${msg}`);
-            addErrorToRows(raw.rowNumbers, msg);
-        }
-
-        if (!raw.batches.length) {
-            const msg = "No batches found";
-            errors.push(`${prefix}: ${msg}`);
-            addErrorToRows(raw.rowNumbers, msg);
-        }
-
-        // 4. Max Scan Validation
-        for (const batch of raw.batches) {
-            if (!Number.isFinite(batch.maxScan) || batch.maxScan <= 0) {
-                const msg = `Max Scan must be a positive number (value: ${batch.maxScan})`;
-                errors.push(`${prefix}: ${msg}`);
-                addErrorToRows(raw.rowNumbers, msg);
-            }
-        }
-
-        // 5. OCR API Resolution
-        let apiErrorMsg = ""; 
-        const ocrApiNameLower = raw.ocrApiName ? raw.ocrApiName.toLowerCase() : "";
-        const ocrApi = ocrApiMap.get(ocrApiNameLower) ?? null;
-
-        if (!raw.ocrApiName) {
-            apiErrorMsg = "OCR API is required";
-        } else if (!ALLOWED_OCR_APIS.includes(ocrApiNameLower) || !ocrApi) {
-            apiErrorMsg = "OCR API is invalid";
-        }
-
-        if (apiErrorMsg) {
-            errors.push(`${prefix}: ${apiErrorMsg}`);
-            addErrorToRows(raw.rowNumbers, apiErrorMsg);
-        }
-
-        // 6. Module Resolution (Auto-derived)
-        const derivedModuleName = deriveModuleName(raw.ocrCode);
-        const moduleCode = derivedModuleName
-            ? (moduleMap.get(derivedModuleName.toLowerCase()) ?? null)
-            : null;
-
-        if (derivedModuleName && !moduleCode) {
-            const msg = `Auto-derived module "${derivedModuleName}" not found in list`;
-            errors.push(`${prefix}: ${msg}`);
-            addErrorToRows(raw.rowNumbers, msg);
-        }
-
-        // 7. Extended Modules (Y/N Flags)
-        const extendedModuleCodes: AppModule[] = [];
-
-        const moduleFlags = [
-            { name: "Inventory", val: raw.moduleInventory },
-            { name: "Near Expiry", val: raw.moduleNearExpiry },
-            { name: "OSA", val: raw.moduleOsa },
-            { name: "Share of Shelf", val: raw.moduleShareOfShelf },
-        ];
-
-        // 7a. First, validate that every column has a Y or N (Blocks NNNN or junk)
-        let hasFormatError = false;
-        for (const flag of moduleFlags) {
-            if (!isValidYN(flag.val)) {
-                const msg = `"${flag.name}" must be strictly 'Y' or 'N' (found: "${flag.val || "blank"}")`;
-                errors.push(`${prefix}: ${msg}`);
-                addErrorToRows(raw.rowNumbers, msg);
-                hasFormatError = true;
-            }
-        }
-
-        // 7b. OCR Inside INV Specific Logic
-        if (raw.ocrCode === "OCR Inside INV") {
-            // 1. Error if any of the other 3 are 'Y'
-            const invalidModules = moduleFlags
-                .filter(m => m.name !== "Inventory" && isTrue(m.val));
-
-            if (invalidModules.length > 0) {
-                const names = invalidModules.map(m => m.name).join(", ");
-                const msg = `For "OCR Inside INV", only Inventory is allowed. Remove 'Y' from: ${names}`;
-                errors.push(`${prefix}: ${msg}`);
-                addErrorToRows(raw.rowNumbers, msg);
-            }
-
-            // 2. CRITICAL: Error if Inventory is 'N' (Prevents NNNN)
-            if (isValidYN(raw.moduleInventory) && !isTrue(raw.moduleInventory)) {
-                const msg = "Inventory must be 'Y' for OCR Inside INV";
-                errors.push(`${prefix}: ${msg}`);
-                addErrorToRows(raw.rowNumbers, msg);
-            } 
-
-            // 3. Add to payload only if it's actually 'Y'
-            if (isTrue(raw.moduleInventory)) {
-                const match = extModuleMap.get("inventory");
-                if (match) extendedModuleCodes.push(match);
-            }
-        } 
-        // 7c. Multiple OCR Module Logic
-        else if (raw.ocrCode === "Multiple OCR Module") {
-            const selected = moduleFlags.filter(m => isTrue(m.val));
-            if (!hasFormatError && selected.length === 0) {
-                const msg = "At least one module must be 'Y' for Multiple OCR Module";
-                errors.push(`${prefix}: ${msg}`);
-                addErrorToRows(raw.rowNumbers, msg);
-            } else {
-                for (const mod of selected) {
-                    const match = extModuleMap.get(mod.name.toLowerCase());
-                    if (match) extendedModuleCodes.push(match);
-                }
-            }
-        }
-
-        const resolvedBatches: Batch[] = raw.batches.map((batch) => {
-            const resolvedGroups: Group[] = batch.groups.map((rawGroup) => {
-                const { 
-                    siteGroupCode, 
-                    storeCode,
-                    regionCode, 
-                    channelCode, 
-                    storeGroupCode, 
-                    storeTypeCode,
-                    startDate,
-                    endDate,
-                    isDelete 
-                } = rawGroup;
-
-                const getIDZero = <T extends { id: number }>(map: Map<string, T>): T => {
-                    return Array.from(map.values()).find(item => item.id === 0) 
-                        || ({ id: 0, code: "0", name: "Default" } as any);
-                };
-
-                // ── 1. Resolve Site Group ─────────────────────────────────────────────
-                let siteGroup = getIDZero(channelMap);
-                if (siteGroupCode) {
-                    const found = channelMap.get(siteGroupCode.toLowerCase());
-                    if (!found) {
-                        const msg = `Site Group Code "${siteGroupCode}" not found`;
-                        errors.push(`${prefix}: ${msg}`);
-                        addErrorToRows(raw.rowNumbers, msg); 
-                    } else {
-                        siteGroup = found;
-                    }
-                }
-
-                // ── 2. Resolve Region ─────────────────────────────────────────────────
-                let region = getIDZero(regionMap);
-                if (regionCode) {
-                    const found = regionMap.get(regionCode.toLowerCase());
-                    if (!found) {
-                        const msg = `Region Code "${regionCode}" not found`;
-                        errors.push(`${prefix}: ${msg}`);
-                        addErrorToRows(raw.rowNumbers, msg); 
-                    } else {
-                        region = found;
-                    }
-                }
-
-                // ── 3. Resolve Store Channel ──────────────────────────────────────────
-                let storeChannel = getIDZero(storeChannelMap);
-                if (channelCode) {
-                    const found = storeChannelMap.get(channelCode.toLowerCase());
-                    if (!found) {
-                        const msg = `Store Channel Code "${channelCode}" not found`;
-                        errors.push(`${prefix}: ${msg}`);
-                        addErrorToRows(raw.rowNumbers, msg); 
-                    } else {
-                        storeChannel = found;
-                        if (siteGroup.id > 0 && siteGroup.store_channel_id !== found.id) {
-                            const msg = `Site Group "${siteGroup.code}" does not match Store Channel "${channelCode}"`;
-                            errors.push(`${prefix}: ${msg}`);
-                            addErrorToRows(raw.rowNumbers, msg);
-                        }
-                    }
-                }
-
-                // ── 4. Resolve Store Group ────────────────────────────────────────────
-                let storeGroup = getIDZero(storeGroupMap);
-                if (storeGroupCode) {
-                    const found = storeGroupMap.get(storeGroupCode.toLowerCase());
-                    if (!found) {
-                        const msg = `Store Group Code "${storeGroupCode}" not found`;
-                        errors.push(`${prefix}: ${msg}`);
-                        addErrorToRows(raw.rowNumbers, msg); 
-                    } else {
-                        storeGroup = found;
-                    }
-                }
-
-                // ── 5. Resolve Store Type ─────────────────────────────────────────────
-                let storeType = getIDZero(storeTypeMap);
-                if (storeTypeCode) {
-                    const found = storeTypeMap.get(storeTypeCode.toLowerCase());
-                    if (!found) {
-                        const msg = `Store Type Code "${storeTypeCode}" not found`;
-                        errors.push(`${prefix}: ${msg}`);
-                        addErrorToRows(raw.rowNumbers, msg);
-                    } else {
-                        storeType = found;
-                    }
-                }
-
-                // ── 6. Resolve Stores ─────────────────────────────────────────────────
-                let store = getIDZero(storeMap);
-                if (storeCode) {
-                    const found = storeMap.get(storeCode.toLowerCase());
-                    if (!found) {
-                        const msg = `Store Code "${storeCode}" not found`;
-                        errors.push(`${prefix}: ${msg}`);
-                        addErrorToRows(raw.rowNumbers, msg);
-                        store = { ...store, name: `Not Found: ${storeCode}` }; 
-                    } else {
-                        store = found;
-                        
-                        if (siteGroup.id > 0 && store.channel_id !== siteGroup.id) {
-                            const msg = `Store "${storeCode}" belongs to a different Site Group`;
-                            errors.push(`${prefix}: ${msg}`);
-                            addErrorToRows(raw.rowNumbers, msg); 
-                        }
-
-                        if (storeType.id > 0 && store.store_type_id !== storeType.id) {
-                            const msg = `Store type "${storeCode}" mismatch (expected Type ID: ${storeType.id})`;
-                            errors.push(`${prefix}: ${msg}`);
-                            addErrorToRows(raw.rowNumbers, msg);
-                        }
-
-                        if (storeGroup.id > 0 && store.store_group_id !== storeGroup.id) {
-                            const msg = `Store group "${storeCode}" mismatch (expected Group ID: ${storeGroup.id})`;
-                            errors.push(`${prefix}: ${msg}`);
-                            addErrorToRows(raw.rowNumbers, msg); 
-                        }
-                    }
-                }
-
-                // ── 7. Dates ─────────────────────────────────────────────────
-                if (!startDate && startDate !== "") { 
-                    const msg = "Start Date is invalid";
-                    errors.push(`${prefix}: ${msg}`);
-                    addErrorToRows(raw.rowNumbers, msg);
-                } else if (startDate === "") {
-                    const msg = "Start Date is required";
-                    errors.push(`${prefix}: ${msg}`);
-                    addErrorToRows(raw.rowNumbers, msg);
-                }
-
-                if (endDate === null) {
-                    const msg = "End Date is invalid";
-                    errors.push(`${prefix}: ${msg}`);
-                    addErrorToRows(raw.rowNumbers, msg);
-                }
-
-                // ── 8. Delete ─────────────────────────────────────────────────
-                const deleteVal = isDelete.trim().toUpperCase();
-    
-                if (deleteVal !== "Y" && deleteVal !== "") {
-                    const msg = `Delete value is invalid`;
-                    errors.push(`${prefix}: ${msg}`);
-                    addErrorToRows(raw.rowNumbers, msg);
-                }
-
-                return { 
-                    siteGroup, 
-                    store, 
-                    region, 
-                    storeChannel, 
-                    storeGroup, 
-                    storeType,
-                    startDate,
-                    endDate,
-                    isDelete: isDelete?.toUpperCase() === "Y" ? 0 : 1 
-                };
-            });
-
-            return { id: batch.id, maxScan: batch.maxScan, groups: resolvedGroups };
-        });
-
-        // 9. Clean internal raw fields before pushing
-        const {
-            batchMap: _bm, ocrApiName: _an, moduleInventory: _mi,
-            moduleNearExpiry: _mne, moduleOsa: _mo, moduleShareOfShelf: _ms,
-            batches: _b, rowNumbers: _rn, emptyLocationRows: _el,
-            ...rest
-        } = raw as any;
-
-        payloads.push({ ...rest, ocrApi, moduleCode, extendedModuleCodes, batches: resolvedBatches });
-    }
-
-    return { payloads, errors, rowErrorMap };
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
 
 interface OcrExcelUploaderProps {
     apiUrl?: string;
@@ -637,7 +134,7 @@ const OcrExcelUploader = ({
     const [sending, setSending] = useState(false);
     const [results, setResults] = useState<SendResult[] | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
-    const [rowErrorMap, setRowErrorMap] = useState<Record<number, string[]>>({});
+    const [rowErrorMap, setRowErrorMap] = useState<Record<number, RowError[]>>({});
     const [originalFile, setOriginalFile] = useState<File | null>(null);
 
     const { data: appOcrApi = [] } = useQuery<AppOcrApi[]>({
@@ -782,65 +279,161 @@ const OcrExcelUploader = ({
     }, []);
 
     const downloadErrorFile = async () => {
-        if (!fileName) return;
+        if (!fileName || !originalFile) return;
 
-        const arrayBuffer = await originalFile?.arrayBuffer();
-        if (!arrayBuffer) {
-            console.error("File content could not be read.");
-            return;
-        }
-
+        const arrayBuffer = await originalFile.arrayBuffer();
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(arrayBuffer);
 
         const ws = workbook.getWorksheet("OCR Mapping");
         if (!ws) return;
 
-        // 1. Identify the column for Errors (one past the current last column)
-        const lastColNumber = ws.actualColumnCount + 1;
-        const errorCol = ws.getColumn(lastColNumber);
-        errorCol.width = 60;
+        // --- 1. BUILD COLUMN MAP ---
+        const columnMapping: Record<string, number> = {};
+        const totalCols = ws.actualColumnCount;
+        for (let col = 1; col <= totalCols; col++) {
+            const r1val = ws.getRow(1).getCell(col).value?.toString().trim().toLowerCase();
+            if (r1val) columnMapping[r1val] = col;
 
-        // 2. Merge cells 1 through 4 for the Header
-        // .mergeCells(top, left, bottom, right)
-        ws.mergeCells(1, lastColNumber, 4, lastColNumber);
+            const r4val = ws.getRow(4).getCell(col).value?.toString().trim().toLowerCase();
+            if (r4val) columnMapping[r4val] = col;
+        }
 
-        // 3. Style the merged Header cell
-        const headerCell = ws.getCell(1, lastColNumber);
-        headerCell.value = "Errors";
-        headerCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
-        headerCell.alignment = { vertical: 'middle', horizontal: 'center' };
-        headerCell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFFF0000' } 
-        };
-        headerCell.border = {
-            top: { style: 'thin' },
-            left: { style: 'thin' },
-            bottom: { style: 'thin' },
-            right: { style: 'thin' }
-        };
+        const moduleSubHeaders = ["inventory", "near expiry", "osa", "share of shelf"];
+        let moduleColStart = columnMapping["module code"]; // column N
+        if (moduleColStart) {
+            moduleSubHeaders.forEach((name, i) => {
+                if (!columnMapping[name]) {
+                    columnMapping[name] = moduleColStart + i;
+                }
+            });
+        }
 
-        // 4. Populate row-specific errors starting from row 5
-       Object.entries(rowErrorMap).forEach(([rowNumStr, errorList]) => {
-            const rowIdx = parseInt(rowNumStr);
-            const cell = ws.getRow(rowIdx).getCell(lastColNumber);
-            
-            cell.value = errorList.join(" | ");
-            // Use ARGB format: 'FFFF0000' (Opaque Red)
-            cell.font = { color: { argb: "FFFF0000" }, bold: true }; 
-            cell.alignment = { wrapText: true };
-
-            // FIX: Explicitly set the fill to 'none' for data cells
-            // This prevents them from inheriting the Red Header style
-            cell.fill = {
-                type: 'pattern',
-                pattern: 'none'
-            };
+        // --- 2. RESET ALL DATA ROWS (row 5 onwards) ---
+        ws.eachRow((row, rowNum) => {
+            if (rowNum < 5) return;
+            row.eachCell({ includeEmpty: true }, (cell) => {
+                cell.fill = { type: 'pattern', pattern: 'none' }; 
+                cell.font = { name: 'Calibri', size: 11, color: { argb: 'FF000000' } };
+                cell.border = {}; 
+            });
         });
 
-        // 5. Generate and download the file
+        // --- 3. COLLECT ALL CELLS THAT NEED HIGHLIGHTING ---
+        const highlightCells = new Map<string, { fill: string; fontColor: string; bold: boolean }>();
+        const errorMessages = new Map<number, string>();
+
+        Object.entries(rowErrorMap).forEach(([rowNumStr, errorList]) => {
+            const rowIdx = parseInt(rowNumStr);
+            errorMessages.set(rowIdx, errorList.map(e => e.message).join("\n"));
+
+            errorList.forEach(({ column }) => {
+                const targetIdx = columnMapping[column.toLowerCase().trim()];
+                if (targetIdx > 0) {
+                    highlightCells.set(`${rowIdx}-${targetIdx}`, {
+                        fill: 'FFFF0000',
+                        fontColor: 'FF000000',
+                        bold: true,
+                    });
+                }
+            });
+        });
+
+        // --- 4. PREPARE THE ERRORS COLUMN ---
+        let lastColNumber = -1;
+
+        // a. Scan existing columns for "ERROR MESSAGE"
+        ws.columns.forEach((col, colIdx) => {
+            for (let i = 1; i <= 4; i++) {
+                const cellValue = ws.getCell(i, colIdx + 1).value?.toString().trim().toUpperCase();
+                if (cellValue === "ERROR MESSAGE") {
+                    lastColNumber = colIdx + 1;
+                    break;
+                }
+            }
+        });
+
+        // b. If not found, create it at the end
+        if (lastColNumber === -1) {
+            lastColNumber = ws.actualColumnCount + 1;
+        }
+
+        const errorColumn = ws.getColumn(lastColNumber);
+        errorColumn.width = 60; 
+
+        // c. Clear data from previous runs (wipes old messages)
+        errorColumn.eachCell({ includeEmpty: true }, (cell, rowNumber) => {
+            if (rowNumber > 4) {
+                cell.value = null;
+                cell.fill = { type: 'pattern', pattern: 'none' };
+                cell.border = {};
+            }
+        });
+
+        // d. Style the Header (ALL CAPS, SIZE 12, ITALIC, NOT BOLD, BLACK BORDER)
+        const headerCell = ws.getCell(1, lastColNumber);
+        try {
+            if (!headerCell.isMerged) ws.mergeCells(1, lastColNumber, 4, lastColNumber);
+        } catch (_) { /* already merged */ }
+
+        headerCell.style = {
+            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } },
+            font: { 
+                name: 'Calibri',
+                size: 12,
+                bold: true,
+                italic: true, 
+                color: { argb: 'FFFFFFFF' } 
+            },
+            alignment: { vertical: 'middle', horizontal: 'center' },
+            border: {
+                top: { style: 'thin', color: { argb: 'FF000000' } },
+                left: { style: 'thin', color: { argb: 'FF000000' } },
+                bottom: { style: 'thin', color: { argb: 'FF000000' } },
+                right: { style: 'thin', color: { argb: 'FF000000' } },
+            }
+        };
+        headerCell.value = "ERROR MESSAGE";
+
+
+        // --- 5. APPLY ERROR HIGHLIGHTS ---
+        const touchedRows = new Set(errorMessages.keys());
+
+        touchedRows.forEach((rowIdx) => {
+            const row = ws.getRow(rowIdx);
+            row.height = 15;
+
+            const summaryCell = row.getCell(lastColNumber);
+            summaryCell.style = {
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } },
+                font: { 
+                    name: 'Calibri',
+                    color: { argb: '#000000' }, 
+                    bold: false, 
+                    size: 11 
+                },
+                alignment: { wrapText: true, vertical: 'top', horizontal: 'left' },
+            };
+            summaryCell.value = errorMessages.get(rowIdx) ?? "";
+
+            row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                const key = `${rowIdx}-${colNumber}`;
+                if (highlightCells.has(key)) {
+                    cell.style = {
+                        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } },
+                        font: { color: { argb: 'FFFFFFFF' }, bold: true },
+                        border: {
+                            top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+                            left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+                            bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+                            right: { style: 'thin', color: { argb: 'FFD3D3D3' } },
+                        }
+                    };
+                }
+            });
+        });
+
+        // --- 6. TRIGGER DOWNLOAD ---
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], {
             type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -850,7 +443,6 @@ const OcrExcelUploader = ({
         link.href = url;
         link.download = fileName;
         link.click();
-        URL.revokeObjectURL(url);
     };
 
     const handleSend = async () => {
@@ -947,7 +539,7 @@ const OcrExcelUploader = ({
                         <Badge variant="blue">{rowCount} rows</Badge>
                         {resolveErrors.length > 0 && (
                             <Badge variant="red">
-                                {resolveErrors.length} error{resolveErrors.length !== 1 ? "s" : ""}
+                                With error{resolveErrors.length !== 1 ? "s" : ""}
                             </Badge>
                         )}
                         {results && successCount > 0 && 
