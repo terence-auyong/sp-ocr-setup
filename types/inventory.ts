@@ -34,6 +34,7 @@ type AreaDataState = {
         ocrCode: string;
         ocr_area_status: number;
         ocr_code_status: number;
+        config_codes?: string;
         error?: boolean;
         duplicate?: boolean;
         changedFields?: {

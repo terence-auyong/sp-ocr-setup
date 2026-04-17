@@ -1,44 +1,51 @@
-"use client";
+'use client';
 
-import { useState, useCallback, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import * as XLSX from "xlsx";
-import { fetchAppOcrApi } from "@/services/app-ocr-api";
-import { fetchAppModule } from "@/services/app-module";
-import { fetchAppModuleExtended } from "@/services/app-module-extended";
-import { fetchAppChannel } from "@/services/app-channel";
-import { fetchAppStore } from "@/services/app-store";
-import { fetchAppRegion } from "@/services/app-region";
-import { fetchAppStoreChannel } from "@/services/app-store-channel";
-import { fetchAppStoreGroup } from "@/services/app-store-group";
-import { fetchAppStoreType } from "@/services/app-store-type";
-import { Check, Download } from "lucide-react";
-import ExcelJS from "exceljs";
-import { AppModule, AppOcrApi, AppRegion, AppStoreChannel, AppStoreGroup, AppStoreType } from "@/types/OcrTemplate";
-import DropZone from "@/components/ocr-mapping-upload/DropZone";
-import Badge from "@/components/ocr-mapping-upload/Badge";
-import { resolvePayloads } from "@/utils/ocr-upload-mapping/resolvePayloads";
-import { rowsToRaw } from "@/utils/ocr-upload-mapping/rowsToRaw";
+import { useState, useCallback, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import * as XLSX from 'xlsx';
+import { fetchAppOcrApi } from '@/services/app-ocr-api';
+import { fetchAppModule } from '@/services/app-module';
+import { fetchAppModuleExtended } from '@/services/app-module-extended';
+import { fetchAppChannel } from '@/services/app-channel';
+import { fetchAppStore } from '@/services/app-store';
+import { fetchAppRegion } from '@/services/app-region';
+import { fetchAppStoreChannel } from '@/services/app-store-channel';
+import { fetchAppStoreGroup } from '@/services/app-store-group';
+import { fetchAppStoreType } from '@/services/app-store-type';
+import { Check, Download } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import {
+    AppModule,
+    AppOcrApi,
+    AppRegion,
+    AppStoreChannel,
+    AppStoreGroup,
+    AppStoreType,
+} from '@/types/OcrTemplate';
+import DropZone from '@/components/ocr-mapping-upload/DropZone';
+import Badge from '@/components/ocr-mapping-upload/Badge';
+import { resolvePayloads } from '@/utils/ocr-upload-mapping/resolvePayloads';
+import { rowsToRaw } from '@/utils/ocr-upload-mapping/rowsToRaw';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface AppStore {
+export interface AppStore {
     id: number;
     store_code: string;
     name: string;
     channel_id: number;
-    store_type_id: number | null; 
+    store_type_id: number | null;
     store_group_id: number | null;
 }
 
-interface AppChannel {
+export interface AppChannel {
     id: number;
     code: string;
     name: string;
-    store_channel_id: number | null; 
+    store_channel_id: number | null;
 }
 
-interface Group {
+export interface Group {
     siteGroup: AppChannel;
     store: AppStore;
     region: AppRegion | null;
@@ -56,7 +63,7 @@ interface Batch {
     groups: Group[];
 }
 
-interface OcrPayload {
+export interface OcrPayload {
     ocrCode: string;
     ocrName: string;
     description: string;
@@ -68,12 +75,12 @@ interface OcrPayload {
 
 interface SendResult {
     payload: OcrPayload;
-    status: "success" | "error";
+    status: 'success' | 'error';
     message?: string;
 }
 
 // ─── Lookup resolution ────────────────────────────────────────────────────────
-interface RawGroup {
+export interface RawGroup {
     siteGroupCode: string;
     storeCode: string;
     regionCode: string;
@@ -90,14 +97,15 @@ interface RawGroup {
     moduleShareOfShelf: string;
 }
 
-interface RawBatch {
+export interface RawBatch {
     id: string;
     maxScan: number;
     groups: RawGroup[];
     groupMap: Record<string, RawGroup>;
+    rowNumbers: number[];
 }
 
-interface RawPayload {
+export interface RawPayload {
     ocrCode: string;
     ocrName: string;
     description: string;
@@ -112,7 +120,7 @@ interface RawPayload {
     emptyLocationRows: number[];
 }
 
-interface RowError {
+export interface RowError {
     column: string;
     message: string;
 }
@@ -123,7 +131,7 @@ interface OcrExcelUploaderProps {
 }
 
 const OcrExcelUploader = ({
-    apiUrl = "/api/ocr-upload",
+    apiUrl = '/api/ocr-upload',
     onComplete,
 }: OcrExcelUploaderProps) => {
     const [rawPayloads, setRawPayloads] = useState<RawPayload[] | null>(null);
@@ -134,67 +142,69 @@ const OcrExcelUploader = ({
     const [sending, setSending] = useState(false);
     const [results, setResults] = useState<SendResult[] | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
-    const [rowErrorMap, setRowErrorMap] = useState<Record<number, RowError[]>>({});
+    const [rowErrorMap, setRowErrorMap] = useState<Record<number, RowError[]>>(
+        {},
+    );
     const [originalFile, setOriginalFile] = useState<File | null>(null);
 
     const { data: appOcrApi = [] } = useQuery<AppOcrApi[]>({
-        queryKey: ["appOcrApi"],
+        queryKey: ['appOcrApi'],
         queryFn: fetchAppOcrApi,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: appModule = [] } = useQuery<AppModule[]>({
-        queryKey: ["appModule"],
+        queryKey: ['appModule'],
         queryFn: fetchAppModule,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: appModuleExtended = [] } = useQuery<AppModule[]>({
-        queryKey: ["appModuleExtended"],
+        queryKey: ['appModuleExtended'],
         queryFn: fetchAppModuleExtended,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: channels = [] } = useQuery<AppChannel[]>({
-        queryKey: ["app-channels"],
+        queryKey: ['app-channels'],
         queryFn: fetchAppChannel,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: stores = [] } = useQuery<AppStore[]>({
-        queryKey: ["app-stores"],
+        queryKey: ['app-stores'],
         queryFn: fetchAppStore,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: regions = [] } = useQuery<AppRegion[]>({
-        queryKey: ["app-regions"],
+        queryKey: ['app-regions'],
         queryFn: fetchAppRegion,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: storeChannels = [] } = useQuery<AppStoreChannel[]>({
-        queryKey: ["app-store-channels"],
+        queryKey: ['app-store-channels'],
         queryFn: fetchAppStoreChannel,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: storeGroups = [] } = useQuery<AppStoreGroup[]>({
-        queryKey: ["app-store-groups"],
+        queryKey: ['app-store-groups'],
         queryFn: fetchAppStoreGroup,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: storeTypes = [] } = useQuery<AppStoreType[]>({
-        queryKey: ["app-store-types"],
+        queryKey: ['app-store-types'],
         queryFn: fetchAppStoreType,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
@@ -213,15 +223,26 @@ const OcrExcelUploader = ({
             appModuleExtended,
             channels,
             stores,
-            regions,      
+            regions,
             storeChannels,
-            storeGroups,  
-            storeTypes,   
+            storeGroups,
+            storeTypes,
         );
         setPayloads(resolved);
         setResolveErrors(errors);
         setRowErrorMap(errorsMap);
-    }, [rawPayloads, appOcrApi, appModule, appModuleExtended, channels, stores, regions, storeChannels, storeGroups, storeTypes]);
+    }, [
+        rawPayloads,
+        appOcrApi,
+        appModule,
+        appModuleExtended,
+        channels,
+        stores,
+        regions,
+        storeChannels,
+        storeGroups,
+        storeTypes,
+    ]);
 
     const handleFile = useCallback((file: File) => {
         setOriginalFile(file);
@@ -235,44 +256,62 @@ const OcrExcelUploader = ({
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
-                const wb = XLSX.read(e.target?.result, { type: "array", cellStyles: true });
+                const wb = XLSX.read(e.target?.result, {
+                    type: 'array',
+                    cellStyles: true,
+                });
 
-                const targetSheet = "OCR Mapping";
+                const targetSheet = 'OCR Mapping';
                 const ws = wb.Sheets[targetSheet];
 
                 if (!ws) {
-                    setParseError(`Sheet "${targetSheet}" not found. Please use the correct template.`);
+                    setParseError(
+                        `Sheet "${targetSheet}" not found. Please use the correct template.`,
+                    );
                     return;
                 }
 
-                const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" });
+                const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+                    header: 1,
+                    defval: '',
+                });
 
                 const mainHeaders = allRows[0] as string[];
                 const subHeaderRow = allRows[3] as string[];
                 const dataRows = allRows.slice(4);
 
                 const headers = mainHeaders.map((h, i) => {
-                    const main = String(h || "").trim();
-                    const sub = String(subHeaderRow[i] || "").trim();
+                    const main = String(h || '').trim();
+                    const sub = String(subHeaderRow[i] || '').trim();
                     return sub || main;
                 });
 
                 const rows = dataRows
                     .map((row) =>
-                        headers.reduce<Record<string, unknown>>((acc, key, i) => {
-                            if (key) acc[key] = (row as unknown[])[i] ?? "";
-                            return acc;
-                        }, {})
+                        headers.reduce<Record<string, unknown>>(
+                            (acc, key, i) => {
+                                if (key) acc[key] = (row as unknown[])[i] ?? '';
+                                return acc;
+                            },
+                            {},
+                        ),
                     )
-                    .filter((row) => Object.values(row).some((v) => String(v).trim() !== ""));
+                    .filter((row) =>
+                        Object.values(row).some((v) => String(v).trim() !== ''),
+                    );
 
-                if (!rows.length) { setParseError("No data rows found starting at Row 5."); return; }
+                if (!rows.length) {
+                    setParseError('No data rows found starting at Row 5.');
+                    return;
+                }
 
                 const raws = rowsToRaw(rows);
                 setRowCount(rows.length);
                 setRawPayloads(raws);
             } catch (err) {
-                setParseError(`Failed to parse file: ${(err as Error).message}`);
+                setParseError(
+                    `Failed to parse file: ${(err as Error).message}`,
+                );
             }
         };
         reader.readAsArrayBuffer(file);
@@ -285,22 +324,37 @@ const OcrExcelUploader = ({
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(arrayBuffer);
 
-        const ws = workbook.getWorksheet("OCR Mapping");
+        const ws = workbook.getWorksheet('OCR Mapping');
         if (!ws) return;
 
         // --- 1. BUILD COLUMN MAP ---
         const columnMapping: Record<string, number> = {};
         const totalCols = ws.actualColumnCount;
         for (let col = 1; col <= totalCols; col++) {
-            const r1val = ws.getRow(1).getCell(col).value?.toString().trim().toLowerCase();
+            const r1val = ws
+                .getRow(1)
+                .getCell(col)
+                .value?.toString()
+                .trim()
+                .toLowerCase();
             if (r1val) columnMapping[r1val] = col;
 
-            const r4val = ws.getRow(4).getCell(col).value?.toString().trim().toLowerCase();
+            const r4val = ws
+                .getRow(4)
+                .getCell(col)
+                .value?.toString()
+                .trim()
+                .toLowerCase();
             if (r4val) columnMapping[r4val] = col;
         }
 
-        const moduleSubHeaders = ["inventory", "near expiry", "osa", "share of shelf"];
-        let moduleColStart = columnMapping["module code"]; // column N
+        const moduleSubHeaders = [
+            'inventory',
+            'near expiry',
+            'osa',
+            'share of shelf',
+        ];
+        let moduleColStart = columnMapping['module code']; // column N
         if (moduleColStart) {
             moduleSubHeaders.forEach((name, i) => {
                 if (!columnMapping[name]) {
@@ -313,19 +367,29 @@ const OcrExcelUploader = ({
         ws.eachRow((row, rowNum) => {
             if (rowNum < 5) return;
             row.eachCell({ includeEmpty: true }, (cell) => {
-                cell.fill = { type: 'pattern', pattern: 'none' }; 
-                cell.font = { name: 'Calibri', size: 11, color: { argb: 'FF000000' } };
-                cell.border = {}; 
+                cell.fill = { type: 'pattern', pattern: 'none' };
+                cell.font = {
+                    name: 'Calibri',
+                    size: 11,
+                    color: { argb: 'FF000000' },
+                };
+                cell.border = {};
             });
         });
 
         // --- 3. COLLECT ALL CELLS THAT NEED HIGHLIGHTING ---
-        const highlightCells = new Map<string, { fill: string; fontColor: string; bold: boolean }>();
+        const highlightCells = new Map<
+            string,
+            { fill: string; fontColor: string; bold: boolean }
+        >();
         const errorMessages = new Map<number, string>();
 
         Object.entries(rowErrorMap).forEach(([rowNumStr, errorList]) => {
             const rowIdx = parseInt(rowNumStr);
-            errorMessages.set(rowIdx, errorList.map(e => e.message).join("\n"));
+            errorMessages.set(
+                rowIdx,
+                errorList.map((e) => e.message).join('\n'),
+            );
 
             errorList.forEach(({ column }) => {
                 const targetIdx = columnMapping[column.toLowerCase().trim()];
@@ -345,8 +409,12 @@ const OcrExcelUploader = ({
         // a. Scan existing columns for "ERROR MESSAGE"
         ws.columns.forEach((col, colIdx) => {
             for (let i = 1; i <= 4; i++) {
-                const cellValue = ws.getCell(i, colIdx + 1).value?.toString().trim().toUpperCase();
-                if (cellValue === "ERROR MESSAGE") {
+                const cellValue = ws
+                    .getCell(i, colIdx + 1)
+                    .value?.toString()
+                    .trim()
+                    .toUpperCase();
+                if (cellValue === 'ERROR MESSAGE') {
                     lastColNumber = colIdx + 1;
                     break;
                 }
@@ -359,7 +427,7 @@ const OcrExcelUploader = ({
         }
 
         const errorColumn = ws.getColumn(lastColNumber);
-        errorColumn.width = 60; 
+        errorColumn.width = 60;
 
         // c. Clear data from previous runs (wipes old messages)
         errorColumn.eachCell({ includeEmpty: true }, (cell, rowNumber) => {
@@ -373,17 +441,24 @@ const OcrExcelUploader = ({
         // d. Style the Header (ALL CAPS, SIZE 12, ITALIC, NOT BOLD, BLACK BORDER)
         const headerCell = ws.getCell(1, lastColNumber);
         try {
-            if (!headerCell.isMerged) ws.mergeCells(1, lastColNumber, 4, lastColNumber);
-        } catch (_) { /* already merged */ }
+            if (!headerCell.isMerged)
+                ws.mergeCells(1, lastColNumber, 4, lastColNumber);
+        } catch (_) {
+            /* already merged */
+        }
 
         headerCell.style = {
-            fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } },
-            font: { 
+            fill: {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFFF0000' },
+            },
+            font: {
                 name: 'Calibri',
                 size: 12,
                 bold: true,
-                italic: true, 
-                color: { argb: 'FFFFFFFF' } 
+                italic: true,
+                color: { argb: 'FFFFFFFF' },
             },
             alignment: { vertical: 'middle', horizontal: 'center' },
             border: {
@@ -391,10 +466,9 @@ const OcrExcelUploader = ({
                 left: { style: 'thin', color: { argb: 'FF000000' } },
                 bottom: { style: 'thin', color: { argb: 'FF000000' } },
                 right: { style: 'thin', color: { argb: 'FF000000' } },
-            }
+            },
         };
-        headerCell.value = "ERROR MESSAGE";
-
+        headerCell.value = 'ERROR MESSAGE';
 
         // --- 5. APPLY ERROR HIGHLIGHTS ---
         const touchedRows = new Set(errorMessages.keys());
@@ -405,29 +479,50 @@ const OcrExcelUploader = ({
 
             const summaryCell = row.getCell(lastColNumber);
             summaryCell.style = {
-                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } },
-                font: { 
-                    name: 'Calibri',
-                    color: { argb: '#000000' }, 
-                    bold: false, 
-                    size: 11 
+                fill: {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFFF0000' },
                 },
-                alignment: { wrapText: true, vertical: 'top', horizontal: 'left' },
+                font: {
+                    name: 'Calibri',
+                    color: { argb: '#000000' },
+                    bold: false,
+                    size: 11,
+                },
+                alignment: {
+                    wrapText: true,
+                    vertical: 'top',
+                    horizontal: 'left',
+                },
             };
-            summaryCell.value = errorMessages.get(rowIdx) ?? "";
+            summaryCell.value = errorMessages.get(rowIdx) ?? '';
 
             row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
                 const key = `${rowIdx}-${colNumber}`;
                 if (highlightCells.has(key)) {
                     cell.style = {
-                        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } },
-                        font: { color: { argb: 'FFFFFFFF' }, bold: true },
+                        fill: {
+                            type: 'pattern',
+                            pattern: 'solid',
+                            fgColor: { argb: 'FFFF0000' },
+                        },
+                        font: { color: { argb: '#000000' }, bold: false },
                         border: {
                             top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
-                            left: { style: 'thin', color: { argb: 'FFD3D3D3' } },
-                            bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
-                            right: { style: 'thin', color: { argb: 'FFD3D3D3' } },
-                        }
+                            left: {
+                                style: 'thin',
+                                color: { argb: 'FFD3D3D3' },
+                            },
+                            bottom: {
+                                style: 'thin',
+                                color: { argb: 'FFD3D3D3' },
+                            },
+                            right: {
+                                style: 'thin',
+                                color: { argb: 'FFD3D3D3' },
+                            },
+                        },
                     };
                 }
             });
@@ -436,10 +531,10 @@ const OcrExcelUploader = ({
         // --- 6. TRIGGER DOWNLOAD ---
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], {
-            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         });
         const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
+        const link = document.createElement('a');
         link.href = url;
         link.download = fileName;
         link.click();
@@ -455,18 +550,22 @@ const OcrExcelUploader = ({
         for (const payload of payloads) {
             try {
                 const res = await fetch(apiUrl, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
                 if (res.ok) {
-                    out.push({ payload, status: "success" });
+                    out.push({ payload, status: 'success' });
                 } else {
                     const text = await res.text();
-                    out.push({ payload, status: "error", message: text });
+                    out.push({ payload, status: 'error', message: text });
                 }
             } catch (err) {
-                out.push({ payload, status: "error", message: (err as Error).message });
+                out.push({
+                    payload,
+                    status: 'error',
+                    message: (err as Error).message,
+                });
             }
         }
 
@@ -476,11 +575,11 @@ const OcrExcelUploader = ({
     };
 
     const downloadTemplate = () => {
-        const link = document.createElement("a");
-        link.href = "/templates/OCR_Mapping_Form.xlsx";
-        link.download = "OCR_Mapping_Form.xlsx";
+        const link = document.createElement('a');
+        link.href = '/templates/OCR_Mapping_Form.xlsx';
+        link.download = 'OCR_Mapping_Form.xlsx';
         link.click();
-    }
+    };
 
     const reset = () => {
         setOriginalFile(null);
@@ -493,8 +592,9 @@ const OcrExcelUploader = ({
         setRowCount(0);
     };
 
-    const successCount = results?.filter((r) => r.status === "success").length ?? 0;
-    const failCount = results?.filter((r) => r.status === "error").length ?? 0;
+    const successCount =
+        results?.filter((r) => r.status === 'success').length ?? 0;
+    const failCount = results?.filter((r) => r.status === 'error').length ?? 0;
     const canSend = payloads !== null && resolveErrors.length === 0 && !sending;
 
     return (
@@ -510,7 +610,11 @@ const OcrExcelUploader = ({
                 </button>
             </div>
 
-            <DropZone onFile={handleFile} disabled={sending} fileName={fileName} />
+            <DropZone
+                onFile={handleFile}
+                disabled={sending}
+                fileName={fileName}
+            />
 
             {parseError && (
                 <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -521,7 +625,9 @@ const OcrExcelUploader = ({
             {resolveErrors.length > 0 && (
                 <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
                     <div className="flex justify-between items-center">
-                        <p className="text-xs font-semibold text-red-700">Error cannot proceed</p>
+                        <p className="text-xs font-semibold text-red-700">
+                            Error cannot proceed
+                        </p>
                         <button
                             onClick={downloadErrorFile}
                             className="flex items-center gap-1 text-xs font-bold bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
@@ -539,15 +645,18 @@ const OcrExcelUploader = ({
                         <Badge variant="blue">{rowCount} rows</Badge>
                         {resolveErrors.length > 0 && (
                             <Badge variant="red">
-                                With error{resolveErrors.length !== 1 ? "s" : ""}
+                                With error
+                                {resolveErrors.length !== 1 ? 's' : ''}
                             </Badge>
                         )}
-                        {results && successCount > 0 && 
+                        {results && successCount > 0 && (
                             <Badge variant="green">
-                                <Check size={16} color="green"/> sent
+                                <Check size={16} color="green" /> sent
                             </Badge>
-                        }
-                        {results && failCount > 0 && <Badge variant="red">failed</Badge>}
+                        )}
+                        {results && failCount > 0 && (
+                            <Badge variant="red">failed</Badge>
+                        )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                         <button
@@ -561,13 +670,13 @@ const OcrExcelUploader = ({
                             disabled={!canSend}
                             className="text-sm px-5 py-2 rounded font-semibold text-white bg-blue-300 hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
-                            {sending ? "Sending…" : "Submit"}
+                            {sending ? 'Sending…' : 'Submit'}
                         </button>
                     </div>
                 </div>
             )}
         </div>
     );
-}
+};
 
 export default OcrExcelUploader;

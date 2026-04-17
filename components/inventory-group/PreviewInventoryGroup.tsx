@@ -33,8 +33,6 @@ const PreviewInventoryGroup = ({ onClose, areaData, inventoryGroupCode, clearAre
 
             const payload = {inventoryGroupCode, areas};
 
-            console.log("payload: ", payload)
-
             await submitInventoryOcr(payload);
 
             setLoadingSubmit(false);
