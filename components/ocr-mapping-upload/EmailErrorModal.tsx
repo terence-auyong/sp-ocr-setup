@@ -31,8 +31,7 @@ const EmailErrorModal = ({ isOpen, onClose, onSend }: EmailErrorModalProps) => {
         setSending(true);
 
         try {
-            // await onSend(email);
-            await new Promise((resolve) => setTimeout(resolve, 3000));
+            await onSend(email);
             setSent(true);
         } catch (err) {
             setError((err as Error).message ?? 'Failed to send. Please try again.');
