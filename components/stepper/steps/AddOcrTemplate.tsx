@@ -132,10 +132,7 @@ const AddOcrTemplate = ({ setCurrentStep, stepsLength }: OcrTemplateStepsProps) 
 
     useEffect(() => {
         if (appOcrApi.length > 0 && !formData.ocrApi) {
-            const defaultApi = appOcrApi.find(api => api.name === "Analyze Document");
-
-            console.log("Default api: ", defaultApi);
-            
+            const defaultApi = appOcrApi.find(api => api.name === "Analyze Document");            
             if (defaultApi) {
                 updateFormData({ ocrApi: defaultApi });
             }

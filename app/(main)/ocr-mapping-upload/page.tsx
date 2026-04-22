@@ -12,8 +12,7 @@ import { fetchAppRegion } from '@/services/app-region';
 import { fetchAppStoreChannel } from '@/services/app-store-channel';
 import { fetchAppStoreGroup } from '@/services/app-store-group';
 import { fetchAppStoreType } from '@/services/app-store-type';
-import { Check, Download } from 'lucide-react';
-import ExcelJS from 'exceljs';
+import { Check, Download, Send } from 'lucide-react';
 import {
     AppModule,
     AppOcrApi,
@@ -26,6 +25,8 @@ import DropZone from '@/components/ocr-mapping-upload/DropZone';
 import Badge from '@/components/ocr-mapping-upload/Badge';
 import { resolvePayloads } from '@/utils/ocr-upload-mapping/resolvePayloads';
 import { rowsToRaw } from '@/utils/ocr-upload-mapping/rowsToRaw';
+import { buildErrorWorkbook } from '@/utils/ocr-upload-mapping/buildErrorWorkbook';
+import EmailErrorModal from '@/components/ocr-mapping-upload/EmailErrorModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -79,7 +80,6 @@ interface SendResult {
     message?: string;
 }
 
-// ─── Lookup resolution ────────────────────────────────────────────────────────
 export interface RawGroup {
     siteGroupCode: string;
     storeCode: string;
@@ -130,6 +130,8 @@ interface OcrExcelUploaderProps {
     onComplete?: (results: SendResult[]) => void;
 }
 
+// ─── Component ────────────────────────────────────────────────────────────────
+
 const OcrExcelUploader = ({
     apiUrl = '/api/ocr-upload',
     onComplete,
@@ -142,10 +144,9 @@ const OcrExcelUploader = ({
     const [sending, setSending] = useState(false);
     const [results, setResults] = useState<SendResult[] | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
-    const [rowErrorMap, setRowErrorMap] = useState<Record<number, RowError[]>>(
-        {},
-    );
+    const [rowErrorMap, setRowErrorMap] = useState<Record<number, RowError[]>>({});
     const [originalFile, setOriginalFile] = useState<File | null>(null);
+    const [emailModalOpen, setEmailModalOpen] = useState(false);
 
     const { data: appOcrApi = [] } = useQuery<AppOcrApi[]>({
         queryKey: ['appOcrApi'],
@@ -288,13 +289,10 @@ const OcrExcelUploader = ({
 
                 const rows = dataRows
                     .map((row) =>
-                        headers.reduce<Record<string, unknown>>(
-                            (acc, key, i) => {
-                                if (key) acc[key] = (row as unknown[])[i] ?? '';
-                                return acc;
-                            },
-                            {},
-                        ),
+                        headers.reduce<Record<string, unknown>>((acc, key, i) => {
+                            if (key) acc[key] = (row as unknown[])[i] ?? '';
+                            return acc;
+                        }, {}),
                     )
                     .filter((row) =>
                         Object.values(row).some((v) => String(v).trim() !== ''),
@@ -309,235 +307,34 @@ const OcrExcelUploader = ({
                 setRowCount(rows.length);
                 setRawPayloads(raws);
             } catch (err) {
-                setParseError(
-                    `Failed to parse file: ${(err as Error).message}`,
-                );
+                setParseError(`Failed to parse file: ${(err as Error).message}`);
             }
         };
         reader.readAsArrayBuffer(file);
     }, []);
 
-    const downloadErrorFile = async () => {
-        if (!fileName || !originalFile) return;
+    /**
+     * Builds the error workbook and sends it to the API route,
+     * which emails it as an attachment to the provided address.
+     */
+    const handleSendErrorEmail = async (email: string) => {
+        if (!originalFile || !fileName) throw new Error('No file available.');
 
-        const arrayBuffer = await originalFile.arrayBuffer();
-        const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(arrayBuffer);
+        const buffer = await buildErrorWorkbook(originalFile, rowErrorMap);
 
-        const ws = workbook.getWorksheet('OCR Mapping');
-        if (!ws) return;
+        // Convert ArrayBuffer → base64 for JSON transport
+        const base64 = Buffer.from(buffer).toString('base64');
 
-        // --- 1. BUILD COLUMN MAP ---
-        const columnMapping: Record<string, number> = {};
-        const totalCols = ws.actualColumnCount;
-        for (let col = 1; col <= totalCols; col++) {
-            const r1val = ws
-                .getRow(1)
-                .getCell(col)
-                .value?.toString()
-                .trim()
-                .toLowerCase();
-            if (r1val) columnMapping[r1val] = col;
+        const res = await fetch('/api/send-error-report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, fileName, fileBase64: base64 }),
+        });
 
-            const r4val = ws
-                .getRow(4)
-                .getCell(col)
-                .value?.toString()
-                .trim()
-                .toLowerCase();
-            if (r4val) columnMapping[r4val] = col;
+        if (!res.ok) {
+            const { error } = await res.json().catch(() => ({}));
+            throw new Error(error ?? `Server error ${res.status}`);
         }
-
-        const moduleSubHeaders = [
-            'inventory',
-            'near expiry',
-            'osa',
-            'share of shelf',
-        ];
-        let moduleColStart = columnMapping['module code']; // column N
-        if (moduleColStart) {
-            moduleSubHeaders.forEach((name, i) => {
-                if (!columnMapping[name]) {
-                    columnMapping[name] = moduleColStart + i;
-                }
-            });
-        }
-
-        // --- 2. RESET ALL DATA ROWS (row 5 onwards) ---
-        ws.eachRow((row, rowNum) => {
-            if (rowNum < 5) return;
-            row.eachCell({ includeEmpty: true }, (cell) => {
-                cell.fill = { type: 'pattern', pattern: 'none' };
-                cell.font = {
-                    name: 'Calibri',
-                    size: 11,
-                    color: { argb: 'FF000000' },
-                };
-                cell.border = {};
-            });
-        });
-
-        // --- 3. COLLECT ALL CELLS THAT NEED HIGHLIGHTING ---
-        const highlightCells = new Map<
-            string,
-            { fill: string; fontColor: string; bold: boolean }
-        >();
-        const errorMessages = new Map<number, string>();
-
-        Object.entries(rowErrorMap).forEach(([rowNumStr, errorList]) => {
-            const rowIdx = parseInt(rowNumStr);
-            errorMessages.set(
-                rowIdx,
-                errorList.map((e) => e.message).join('\n'),
-            );
-
-            errorList.forEach(({ column }) => {
-                const targetIdx = columnMapping[column.toLowerCase().trim()];
-                if (targetIdx > 0) {
-                    highlightCells.set(`${rowIdx}-${targetIdx}`, {
-                        fill: 'FFFF0000',
-                        fontColor: 'FF000000',
-                        bold: true,
-                    });
-                }
-            });
-        });
-
-        // --- 4. PREPARE THE ERRORS COLUMN ---
-        let lastColNumber = -1;
-
-        // a. Scan existing columns for "ERROR MESSAGE"
-        ws.columns.forEach((col, colIdx) => {
-            for (let i = 1; i <= 4; i++) {
-                const cellValue = ws
-                    .getCell(i, colIdx + 1)
-                    .value?.toString()
-                    .trim()
-                    .toUpperCase();
-                if (cellValue === 'ERROR MESSAGE') {
-                    lastColNumber = colIdx + 1;
-                    break;
-                }
-            }
-        });
-
-        // b. If not found, create it at the end
-        if (lastColNumber === -1) {
-            lastColNumber = ws.actualColumnCount + 1;
-        }
-
-        const errorColumn = ws.getColumn(lastColNumber);
-        errorColumn.width = 60;
-
-        // c. Clear data from previous runs (wipes old messages)
-        errorColumn.eachCell({ includeEmpty: true }, (cell, rowNumber) => {
-            if (rowNumber > 4) {
-                cell.value = null;
-                cell.fill = { type: 'pattern', pattern: 'none' };
-                cell.border = {};
-            }
-        });
-
-        // d. Style the Header (ALL CAPS, SIZE 12, ITALIC, NOT BOLD, BLACK BORDER)
-        const headerCell = ws.getCell(1, lastColNumber);
-        try {
-            if (!headerCell.isMerged)
-                ws.mergeCells(1, lastColNumber, 4, lastColNumber);
-        } catch (_) {
-            /* already merged */
-        }
-
-        headerCell.style = {
-            fill: {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FFFF0000' },
-            },
-            font: {
-                name: 'Calibri',
-                size: 12,
-                bold: true,
-                italic: true,
-                color: { argb: 'FFFFFFFF' },
-            },
-            alignment: { vertical: 'middle', horizontal: 'center' },
-            border: {
-                top: { style: 'thin', color: { argb: 'FF000000' } },
-                left: { style: 'thin', color: { argb: 'FF000000' } },
-                bottom: { style: 'thin', color: { argb: 'FF000000' } },
-                right: { style: 'thin', color: { argb: 'FF000000' } },
-            },
-        };
-        headerCell.value = 'ERROR MESSAGE';
-
-        // --- 5. APPLY ERROR HIGHLIGHTS ---
-        const touchedRows = new Set(errorMessages.keys());
-
-        touchedRows.forEach((rowIdx) => {
-            const row = ws.getRow(rowIdx);
-            row.height = 15;
-
-            const summaryCell = row.getCell(lastColNumber);
-            summaryCell.style = {
-                fill: {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'FFFF0000' },
-                },
-                font: {
-                    name: 'Calibri',
-                    color: { argb: '#000000' },
-                    bold: false,
-                    size: 11,
-                },
-                alignment: {
-                    wrapText: true,
-                    vertical: 'top',
-                    horizontal: 'left',
-                },
-            };
-            summaryCell.value = errorMessages.get(rowIdx) ?? '';
-
-            row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-                const key = `${rowIdx}-${colNumber}`;
-                if (highlightCells.has(key)) {
-                    cell.style = {
-                        fill: {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFF0000' },
-                        },
-                        font: { color: { argb: '#000000' }, bold: false },
-                        border: {
-                            top: { style: 'thin', color: { argb: 'FFD3D3D3' } },
-                            left: {
-                                style: 'thin',
-                                color: { argb: 'FFD3D3D3' },
-                            },
-                            bottom: {
-                                style: 'thin',
-                                color: { argb: 'FFD3D3D3' },
-                            },
-                            right: {
-                                style: 'thin',
-                                color: { argb: 'FFD3D3D3' },
-                            },
-                        },
-                    };
-                }
-            });
-        });
-
-        // --- 6. TRIGGER DOWNLOAD ---
-        const buffer = await workbook.xlsx.writeBuffer();
-        const blob = new Blob([buffer], {
-            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        link.click();
     };
 
     const handleSend = async () => {
@@ -561,11 +358,7 @@ const OcrExcelUploader = ({
                     out.push({ payload, status: 'error', message: text });
                 }
             } catch (err) {
-                out.push({
-                    payload,
-                    status: 'error',
-                    message: (err as Error).message,
-                });
+                out.push({ payload, status: 'error', message: (err as Error).message });
             }
         }
 
@@ -592,90 +385,91 @@ const OcrExcelUploader = ({
         setRowCount(0);
     };
 
-    const successCount =
-        results?.filter((r) => r.status === 'success').length ?? 0;
+    const successCount = results?.filter((r) => r.status === 'success').length ?? 0;
     const failCount = results?.filter((r) => r.status === 'error').length ?? 0;
     const canSend = payloads !== null && resolveErrors.length === 0 && !sending;
 
     return (
-        <div className="max-w-168 bg-white p-4 rounded-sm mx-auto font-sans space-y-4">
-            <div className="flex items-center justify-between">
-                <h1 className="font-bold text-lg">OCR Mapping Upload</h1>
-                <button
-                    onClick={downloadTemplate}
-                    className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                    <Download size={14} />
-                    Download Template
-                </button>
+        <>
+            <div className="max-w-168 bg-white p-4 rounded-sm mx-auto font-sans space-y-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                    <h1 className="font-bold text-lg">OCR Mapping Upload</h1>
+                    <button
+                        onClick={downloadTemplate}
+                        className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                    >
+                        <Download size={14} />
+                        Download Template
+                    </button>
+                </div>
+
+                <DropZone onFile={handleFile} disabled={sending} fileName={fileName} />
+
+                {parseError && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                        {parseError}
+                    </div>
+                )}
+
+                {resolveErrors.length > 0 && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                        <div className="flex justify-between items-center">
+                            <p className="text-xs font-semibold text-red-700">
+                                Error — cannot proceed
+                            </p>
+                            <button
+                                onClick={() => setEmailModalOpen(true)}
+                                className="flex items-center gap-1 text-xs font-bold bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
+                            >
+                                <Send size={12} />
+                                Send Report
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {payloads && (
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="blue">{rowCount} rows</Badge>
+                            {resolveErrors.length > 0 && (
+                                <Badge variant="red">
+                                    With error{resolveErrors.length !== 1 ? 's' : ''}
+                                </Badge>
+                            )}
+                            {results && successCount > 0 && (
+                                <Badge variant="green">
+                                    <Check size={16} color="green" /> sent
+                                </Badge>
+                            )}
+                            {results && failCount > 0 && (
+                                <Badge variant="red">failed</Badge>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                onClick={reset}
+                                className="text-sm px-4 py-2 rounded border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+                            >
+                                Remove
+                            </button>
+                            <button
+                                onClick={handleSend}
+                                disabled={!canSend}
+                                className="text-sm px-5 py-2 rounded font-semibold text-white bg-blue-300 hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {sending ? 'Sending…' : 'Submit'}
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
-
-            <DropZone
-                onFile={handleFile}
-                disabled={sending}
-                fileName={fileName}
+            <EmailErrorModal
+                isOpen={emailModalOpen}
+                onClose={() => setEmailModalOpen(false)}
+                onSend={handleSendErrorEmail}
             />
-
-            {parseError && (
-                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                    {parseError}
-                </div>
-            )}
-
-            {resolveErrors.length > 0 && (
-                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
-                    <div className="flex justify-between items-center">
-                        <p className="text-xs font-semibold text-red-700">
-                            Error cannot proceed
-                        </p>
-                        <button
-                            onClick={downloadErrorFile}
-                            className="flex items-center gap-1 text-xs font-bold bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
-                        >
-                            <Download size={12} />
-                            Download
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {payloads && (
-                <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="blue">{rowCount} rows</Badge>
-                        {resolveErrors.length > 0 && (
-                            <Badge variant="red">
-                                With error
-                                {resolveErrors.length !== 1 ? 's' : ''}
-                            </Badge>
-                        )}
-                        {results && successCount > 0 && (
-                            <Badge variant="green">
-                                <Check size={16} color="green" /> sent
-                            </Badge>
-                        )}
-                        {results && failCount > 0 && (
-                            <Badge variant="red">failed</Badge>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                        <button
-                            onClick={reset}
-                            className="text-sm px-4 py-2 rounded border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
-                        >
-                            Remove
-                        </button>
-                        <button
-                            onClick={handleSend}
-                            disabled={!canSend}
-                            className="text-sm px-5 py-2 rounded font-semibold text-white bg-blue-300 hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                        >
-                            {sending ? 'Sending…' : 'Submit'}
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
+        </>
     );
 };
 

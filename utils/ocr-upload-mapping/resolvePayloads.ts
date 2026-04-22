@@ -97,7 +97,13 @@ export const resolvePayloads = (
     ) => {
         rowNums.forEach((num) => {
             if (!rowErrorMap[num]) rowErrorMap[num] = [];
-            if (!rowErrorMap[num].some((e) => e.message === msg)) {
+            
+            // Change the check to look at BOTH message AND column
+            const isDuplicate = rowErrorMap[num].some(
+                (e) => e.message === msg && e.column === column
+            );
+
+            if (!isDuplicate) {
                 rowErrorMap[num].push({ column, message: msg });
             }
         });
@@ -289,6 +295,8 @@ export const resolvePayloads = (
                             moduleFlags.forEach((m) =>
                                 addErrorToRows(currentRow, msg, m.column),
                             );
+                            errors.push(`Row ${rawGroup.rowNumber}: ${msg}`);
+                            hasAnyError = true;
                         }
                     }
                 }
@@ -389,7 +397,7 @@ export const resolvePayloads = (
                 if (storeCode) {
                     const found = storeMap.get(storeCode.toLowerCase());
                     if (!found) {
-                        const msg = `Store Code "${storeCode}" not found`;
+                        const msg = `Invalid value (Store Code).`;
                         errors.push(`${rawGroup.rowNumber}: ${msg}`);
                         addErrorToRows(currentRow, msg, 'store code');
                         store = { ...store, name: `Not Found: ${storeCode}` };
