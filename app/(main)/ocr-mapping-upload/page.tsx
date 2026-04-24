@@ -28,6 +28,8 @@ import { rowsToRaw } from '@/utils/ocr-upload-mapping/rowsToRaw';
 import { buildErrorWorkbook } from '@/utils/ocr-upload-mapping/buildErrorWorkbook';
 import EmailErrorModal from '@/components/ocr-mapping-upload/EmailErrorModal';
 import { LuCircleCheckBig } from 'react-icons/lu';
+import { useUploadStore } from '@/hooks/ocr-mapping-upload/useUpload';
+import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -137,6 +139,9 @@ const OcrExcelUploader = ({
     apiUrl = '/api/ocr-upload',
     onComplete,
 }: OcrExcelUploaderProps) => {
+    const { startUpload, isUploading, uploadError, clearStore } =
+        useUploadStore();
+
     const [rawPayloads, setRawPayloads] = useState<RawPayload[] | null>(null);
     const [payloads, setPayloads] = useState<OcrPayload[] | null>(null);
     const [resolveErrors, setResolveErrors] = useState<string[]>([]);
@@ -144,14 +149,13 @@ const OcrExcelUploader = ({
     const [rowCount, setRowCount] = useState(0);
     const [results, setResults] = useState<SendResult[] | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
-    const [rowErrorMap, setRowErrorMap] = useState<Record<number, RowError[]>>({});
+    const [rowErrorMap, setRowErrorMap] = useState<Record<number, RowError[]>>(
+        {},
+    );
     const [originalFile, setOriginalFile] = useState<File | null>(null);
     const [emailModalOpen, setEmailModalOpen] = useState(false);
-    const [loadingSubmit, setLoadingSubmit] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
-    const [progress, setProgress] = useState(0)
-
-    const [uploadTime, setUploadTime] = useState<number | null>(null);
+    const [showErrorModal, setShowErrorModal] = useState(false);
 
     const { data: appOcrApi = [] } = useQuery<AppOcrApi[]>({
         queryKey: ['appOcrApi'],
@@ -250,6 +254,18 @@ const OcrExcelUploader = ({
         storeTypes,
     ]);
 
+    useEffect(() => {
+        if (results) {
+            setShowSuccess(true);
+        }
+    }, [results]);
+
+    useEffect(() => {
+        if (uploadError) {
+            setShowErrorModal(true);
+        }
+    }, [uploadError]);
+
     const handleFile = useCallback((file: File) => {
         setOriginalFile(file);
         setFileName(file.name);
@@ -294,10 +310,13 @@ const OcrExcelUploader = ({
 
                 const rows = dataRows
                     .map((row) =>
-                        headers.reduce<Record<string, unknown>>((acc, key, i) => {
-                            if (key) acc[key] = (row as unknown[])[i] ?? '';
-                            return acc;
-                        }, {}),
+                        headers.reduce<Record<string, unknown>>(
+                            (acc, key, i) => {
+                                if (key) acc[key] = (row as unknown[])[i] ?? '';
+                                return acc;
+                            },
+                            {},
+                        ),
                     )
                     .filter((row) =>
                         Object.values(row).some((v) => String(v).trim() !== ''),
@@ -312,7 +331,9 @@ const OcrExcelUploader = ({
                 setRowCount(rows.length);
                 setRawPayloads(raws);
             } catch (err) {
-                setParseError(`Failed to parse file: ${(err as Error).message}`);
+                setParseError(
+                    `Failed to parse file: ${(err as Error).message}`,
+                );
             }
         };
         reader.readAsArrayBuffer(file);
@@ -343,41 +364,13 @@ const OcrExcelUploader = ({
     };
 
     const handleSend = async () => {
-        if (!payloads || payloads.length === 0) {
-            alert("No data to send");
-            return;
-        }
+        if (!payloads) return;
 
-        try {
-            setLoadingSubmit(true);
+        startUpload(apiUrl, payloads).catch((err) => {
+            console.error('Upload failed:', err);
+        });
 
-            const res = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ templates: payloads }),
-            });
-
-            if (!res.ok) {
-                const text = await res.text();
-                throw new Error(`Request failed: ${res.status} - ${text}`);
-            }
-
-            const data = await res.json();
-
-            if (!data || data.error) {
-                throw new Error(data?.error || "Unknown server error");
-            }
-
-            setResults(data.results);
-            setShowSuccess(true);
-            onComplete?.(data.results);
-
-        } catch (err: any) {
-            console.error(err);
-            alert(err.message || "Something went wrong");
-        } finally {
-            setLoadingSubmit(false);
-        }
+        clearArea();
     };
 
     const downloadTemplate = () => {
@@ -398,34 +391,29 @@ const OcrExcelUploader = ({
         setRowCount(0);
     };
 
-    const successCount = results?.filter((r) => r.status === 'success').length ?? 0;
-    const failCount = results?.filter((r) => r.status === 'error').length ?? 0;
-    const canSend = payloads !== null && resolveErrors.length === 0 && !loadingSubmit;
+    const canSend =
+        payloads !== null && resolveErrors.length === 0 && !isUploading;
+
+    const hasData = payloads !== null;
+    const hasErrors = resolveErrors.length > 0;
+
+    // The button is "clickable" only if there is data, no errors, and we aren't already uploading
+    const canClickSubmit = hasData && !hasErrors && !isUploading;
 
     return (
         <>
-            {loadingSubmit && (
-                <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20">
-                    <div className="flex flex-col items-center gap-2">
-                        <div className="w-12 h-12 border-4 border-blue-300 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="text-white font-medium">Submitting...</span>
-                    </div>
-                </div>
-            )}
-
             {showSuccess && (
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20">
                     <div className="bg-white rounded p-4 shadow-lg flex flex-col items-center gap-3 w-64">
                         <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                            <LuCircleCheckBig size={40} color='green'/>
+                            <LuCircleCheckBig size={40} color="green" />
                         </div>
                         <div className="text-center">
-                            <h3 className="text-lg font-semibold text-black">Executed Successfully!</h3>
-                            {uploadTime && (
-                                <p className="text-xs text-gray-400 mt-1">Time: {uploadTime}s</p>
-                            )}
+                            <h3 className="text-lg font-semibold text-black">
+                                Executed Successfully!
+                            </h3>
                         </div>
-                        <button 
+                        <button
                             className="bg-blue-500 hover:bg-blue-600 p-2 w-full rounded text-white font-medium transition-colors"
                             onClick={() => {
                                 clearArea();
@@ -433,6 +421,31 @@ const OcrExcelUploader = ({
                             }}
                         >
                             Close
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {showErrorModal && (
+                <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-30">
+                    <div className="bg-white rounded p-6 shadow-xl flex flex-col items-center gap-4 w-80">
+                        <div className="text-center">
+                            <h3 className="text-lg font-bold text-gray-900">
+                                Upload Failed
+                            </h3>
+                            <p className="text-sm text-gray-500 mt-1">
+                                {uploadError ||
+                                    'There was a problem processing your request.'}
+                            </p>
+                        </div>
+                        <button
+                            className="bg-red-600 hover:bg-red-700 w-full py-2 rounded text-white font-medium transition-colors"
+                            onClick={() => {
+                                clearStore();
+                                setShowErrorModal(false);
+                            }}
+                        >
+                            Try Again
                         </button>
                     </div>
                 </div>
@@ -450,7 +463,22 @@ const OcrExcelUploader = ({
                     </button>
                 </div>
 
-                <DropZone onFile={handleFile} disabled={loadingSubmit} fileName={fileName} />
+                <div className="w-160 h-80 relative">
+                    {isUploading ? (
+                        <div className="w-full h-full border-2 border-dashed border-blue-200 rounded-lg flex flex-col items-center justify-center gap-3">
+                            <div className="w-10 h-10 border-4 border-blue-300 border-t-transparent rounded-full animate-spin" />
+                            <p className="text-sm font-medium text-gray-400">
+                                Uploading file...
+                            </p>
+                        </div>
+                    ) : (
+                        <DropZone
+                            onFile={handleFile}
+                            disabled={isUploading}
+                            fileName={fileName}
+                        />
+                    )}
+                </div>
 
                 {parseError && (
                     <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -475,46 +503,42 @@ const OcrExcelUploader = ({
                     </div>
                 )}
 
-                {payloads && (
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center justify-between gap-3 mt-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {hasData && (
                             <Badge variant="blue">{rowCount} rows</Badge>
-                            {resolveErrors.length > 0 && (
-                                <Badge variant="red">
-                                    With error{resolveErrors.length !== 1 ? 's' : ''}
-                                </Badge>
-                            )}
-                            {results && successCount > 0 && (
-                                <Badge variant="green">
-                                    <Check size={16} color="green" /> sent
-                                </Badge>
-                            )}
-                            {results && failCount > 0 && (
-                                <Badge variant="red">failed</Badge>
-                            )}
-                            {uploadTime !== null && (
-                                <span className="text-xs text-gray-500 font-mono">
-                                    ({uploadTime}s)
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                            <button
-                                onClick={clearArea}
-                                className="text-sm px-4 py-2 rounded border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
-                            >
-                                Remove
-                            </button>
-                            <button
-                                onClick={handleSend}
-                                disabled={!canSend}
-                                className="text-sm px-5 py-2 rounded font-semibold text-white bg-blue-300 hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            >
-                                {loadingSubmit ? 'Sending…' : 'Submit'}
-                            </button>
-                        </div>
+                        )}
+                        {hasErrors && (
+                            <Badge variant="red">
+                                With error
+                                {resolveErrors.length !== 1 ? 's' : ''}
+                            </Badge>
+                        )}
                     </div>
-                )}
+
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={clearArea}
+                            disabled={!hasData || isUploading}
+                            className="text-sm px-4 py-2 rounded border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Remove
+                        </button>
+
+                        <button
+                            onClick={handleSend}
+                            disabled={!canClickSubmit}
+                            className={`text-sm px-5 py-2 rounded font-semibold text-white transition-colors 
+                                ${
+                                    canClickSubmit
+                                        ? 'bg-blue-500 hover:bg-blue-600'
+                                        : 'bg-gray-300 cursor-not-allowed opacity-70'
+                                }`}
+                        >
+                            Submit
+                        </button>
+                    </div>
+                </div>
             </div>
             <EmailErrorModal
                 isOpen={emailModalOpen}
