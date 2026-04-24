@@ -68,7 +68,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                 {children}
             </main>
             {showLogoutConfirm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
                     <div className="bg-white p-6 rounded shadow-xl w-80 flex flex-col gap-4">
                         <div className="text-center">
                             <h3 className="text-lg font-bold text-gray-900">Confirm Logout</h3>

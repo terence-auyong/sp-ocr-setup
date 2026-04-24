@@ -27,6 +27,7 @@ import { resolvePayloads } from '@/utils/ocr-upload-mapping/resolvePayloads';
 import { rowsToRaw } from '@/utils/ocr-upload-mapping/rowsToRaw';
 import { buildErrorWorkbook } from '@/utils/ocr-upload-mapping/buildErrorWorkbook';
 import EmailErrorModal from '@/components/ocr-mapping-upload/EmailErrorModal';
+import { LuCircleCheckBig } from 'react-icons/lu';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,12 +142,16 @@ const OcrExcelUploader = ({
     const [resolveErrors, setResolveErrors] = useState<string[]>([]);
     const [parseError, setParseError] = useState<string | null>(null);
     const [rowCount, setRowCount] = useState(0);
-    const [sending, setSending] = useState(false);
     const [results, setResults] = useState<SendResult[] | null>(null);
     const [fileName, setFileName] = useState<string | null>(null);
     const [rowErrorMap, setRowErrorMap] = useState<Record<number, RowError[]>>({});
     const [originalFile, setOriginalFile] = useState<File | null>(null);
     const [emailModalOpen, setEmailModalOpen] = useState(false);
+    const [loadingSubmit, setLoadingSubmit] = useState(false);
+    const [showSuccess, setShowSuccess] = useState(false);
+    const [progress, setProgress] = useState(0)
+
+    const [uploadTime, setUploadTime] = useState<number | null>(null);
 
     const { data: appOcrApi = [] } = useQuery<AppOcrApi[]>({
         queryKey: ['appOcrApi'],
@@ -338,33 +343,41 @@ const OcrExcelUploader = ({
     };
 
     const handleSend = async () => {
-        if (!payloads) return;
-        setSending(true);
-        setResults(null);
-
-        const out: SendResult[] = [];
-
-        for (const payload of payloads) {
-            try {
-                const res = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                });
-                if (res.ok) {
-                    out.push({ payload, status: 'success' });
-                } else {
-                    const text = await res.text();
-                    out.push({ payload, status: 'error', message: text });
-                }
-            } catch (err) {
-                out.push({ payload, status: 'error', message: (err as Error).message });
-            }
+        if (!payloads || payloads.length === 0) {
+            alert("No data to send");
+            return;
         }
 
-        setSending(false);
-        setResults(out);
-        onComplete?.(out);
+        try {
+            setLoadingSubmit(true);
+
+            const res = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ templates: payloads }),
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`Request failed: ${res.status} - ${text}`);
+            }
+
+            const data = await res.json();
+
+            if (!data || data.error) {
+                throw new Error(data?.error || "Unknown server error");
+            }
+
+            setResults(data.results);
+            setShowSuccess(true);
+            onComplete?.(data.results);
+
+        } catch (err: any) {
+            console.error(err);
+            alert(err.message || "Something went wrong");
+        } finally {
+            setLoadingSubmit(false);
+        }
     };
 
     const downloadTemplate = () => {
@@ -374,7 +387,7 @@ const OcrExcelUploader = ({
         link.click();
     };
 
-    const reset = () => {
+    const clearArea = () => {
         setOriginalFile(null);
         setPayloads(null);
         setRawPayloads(null);
@@ -387,10 +400,44 @@ const OcrExcelUploader = ({
 
     const successCount = results?.filter((r) => r.status === 'success').length ?? 0;
     const failCount = results?.filter((r) => r.status === 'error').length ?? 0;
-    const canSend = payloads !== null && resolveErrors.length === 0 && !sending;
+    const canSend = payloads !== null && resolveErrors.length === 0 && !loadingSubmit;
 
     return (
         <>
+            {loadingSubmit && (
+                <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20">
+                    <div className="flex flex-col items-center gap-2">
+                        <div className="w-12 h-12 border-4 border-blue-300 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-white font-medium">Submitting...</span>
+                    </div>
+                </div>
+            )}
+
+            {showSuccess && (
+                <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20">
+                    <div className="bg-white rounded p-4 shadow-lg flex flex-col items-center gap-3 w-64">
+                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                            <LuCircleCheckBig size={40} color='green'/>
+                        </div>
+                        <div className="text-center">
+                            <h3 className="text-lg font-semibold text-black">Executed Successfully!</h3>
+                            {uploadTime && (
+                                <p className="text-xs text-gray-400 mt-1">Time: {uploadTime}s</p>
+                            )}
+                        </div>
+                        <button 
+                            className="bg-blue-500 hover:bg-blue-600 p-2 w-full rounded text-white font-medium transition-colors"
+                            onClick={() => {
+                                clearArea();
+                                setShowSuccess(false);
+                            }}
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <div className="max-w-168 bg-white p-4 rounded-sm mx-auto font-sans space-y-4 shadow-sm">
                 <div className="flex items-center justify-between">
                     <h1 className="font-bold text-lg">OCR Mapping Upload</h1>
@@ -403,7 +450,7 @@ const OcrExcelUploader = ({
                     </button>
                 </div>
 
-                <DropZone onFile={handleFile} disabled={sending} fileName={fileName} />
+                <DropZone onFile={handleFile} disabled={loadingSubmit} fileName={fileName} />
 
                 {parseError && (
                     <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -445,10 +492,15 @@ const OcrExcelUploader = ({
                             {results && failCount > 0 && (
                                 <Badge variant="red">failed</Badge>
                             )}
+                            {uploadTime !== null && (
+                                <span className="text-xs text-gray-500 font-mono">
+                                    ({uploadTime}s)
+                                </span>
+                            )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                             <button
-                                onClick={reset}
+                                onClick={clearArea}
                                 className="text-sm px-4 py-2 rounded border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
                             >
                                 Remove
@@ -458,7 +510,7 @@ const OcrExcelUploader = ({
                                 disabled={!canSend}
                                 className="text-sm px-5 py-2 rounded font-semibold text-white bg-blue-300 hover:bg-blue-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                             >
-                                {sending ? 'Sending…' : 'Submit'}
+                                {loadingSubmit ? 'Sending…' : 'Submit'}
                             </button>
                         </div>
                     </div>

@@ -51,9 +51,9 @@ const EmailErrorModal = ({ isOpen, onClose, onSend }: EmailErrorModalProps) => {
         <>
             {/* ─── FULL SCREEN LOADING OVERLAY ─── */}
             {sending && !sent && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
+                <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100]">
                     <div className="flex flex-col items-center gap-3">
-                        <div className="w-14 h-14 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-12 h-12 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
                         <span className="text-white font-bold text-lg tracking-wide">Sending Report...</span>
                     </div>
                 </div>
@@ -61,7 +61,7 @@ const EmailErrorModal = ({ isOpen, onClose, onSend }: EmailErrorModalProps) => {
 
             {/* ─── FULL SCREEN SUCCESS OVERLAY ─── */}
             {sent && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] animate-in fade-in duration-300">
+                <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[100] animate-in fade-in duration-300">
                     <div className="bg-white rounded-sm p-4 shadow-2xl flex flex-col items-center gap-4 w-80 mx-4">
                         <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
                             <LuCircleCheckBig size={40} className="text-green-600" />
@@ -85,7 +85,7 @@ const EmailErrorModal = ({ isOpen, onClose, onSend }: EmailErrorModalProps) => {
 
             {/* ─── MAIN MODAL ─── */}
             <div
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
                 onClick={(e) => e.target === e.currentTarget && handleClose()}
             >
                 <div className="relative w-full max-w-sm mx-4 bg-white rounded-sm shadow-xl border border-gray-100 overflow-hidden">

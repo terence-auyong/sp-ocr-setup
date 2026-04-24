@@ -47,23 +47,32 @@ export async function getPool(req: NextRequest): Promise<mysql.Pool> {
 
   let pool;
 
+  // Configuration shared by both local and cloud
+  const poolConfig = {
+    waitForConnections: true,
+    connectionLimit: 20, // Increased to handle parallel "Blasting"
+    queueLimit: 0,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000,
+  };
+
   if (process.env.DB_HOST) {
     pool = mysql.createPool({
+      ...poolConfig,
       host: process.env.DB_HOST,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
-      waitForConnections: true,
-      connectionLimit: 10,
     });
   } else {
+    // This is where your Cloud credentials come in
     const creds = await getCredentialsForStage(stage, schemaName);
     pool = mysql.createPool({
+      ...poolConfig,
       host: creds.host,
       user: creds.user,
       password: creds.password,
       database: creds.database,
-      waitForConnections: true,
     });
   }
 

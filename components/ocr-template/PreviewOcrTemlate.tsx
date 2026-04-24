@@ -42,7 +42,7 @@ const PreviewOcrTemplate = ({ onClose, setCurrentStep }: PreviewChangesProps) =>
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/50" />
+            <div className="absolute inset-0 bg-black/30" />
             <div className="relative z-10 flex bg-[#FAFAFA] shadow-md rounded p-4 max-h-[90vh] overflow-y-auto">
 
                 {loadingSubmit && (
@@ -61,7 +61,7 @@ const PreviewOcrTemplate = ({ onClose, setCurrentStep }: PreviewChangesProps) =>
                                 <LuCircleCheckBig size={40} color="green" />
                             </div>
                             <h3 className="text-lg font-semibold text-black">Executed Successfully!</h3>
-                            <button className="button p-2 w-16 rounded text-white" onClick={handleRedirect}>
+                            <button className="button p-2 w-full rounded text-white font-bold" onClick={handleRedirect}>
                                 Close
                             </button>
                         </div>

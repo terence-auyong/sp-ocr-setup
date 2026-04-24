@@ -1,8 +1,7 @@
 "use client"
 import { useState } from 'react';
-import AppStepper from '../../components/stepper/AppStepper';
-import AddOcrTemplate from '../../components/stepper/steps/AddOcrTemplate';
-import StoreChannel from '../../components/stepper/steps/StoreChannel';
+import AddOcrTemplate from '../../components/ocr-template/AddOcrTemplate';
+import StoreChannel from '../../components/ocr-template/StoreChannel';
 import { OcrTemplateProvider } from '../../contexts/OcrTemplateContexts';
 
 const page = () => {

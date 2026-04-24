@@ -47,7 +47,7 @@ const PreviewInventoryGroup = ({ onClose, areaData, inventoryGroupCode, clearAre
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/50"></div>
+        <div className="absolute inset-0 bg-black/30"></div>
         <div className="relative z-10 flex bg-[#FAFAFA] shadow-md rounded p-4 h-160">
             {loadingSubmit && (
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20">
@@ -65,7 +65,7 @@ const PreviewInventoryGroup = ({ onClose, areaData, inventoryGroupCode, clearAre
                         </div>
                         <h3 className="text-lg font-semibold text-black">Executed Successfully!</h3>
                         <button 
-                            className="button p-2 w-16 rounded text-white"
+                            className="button p-2 w-full rounded text-white font-bold"
                             onClick={() => {
                                 clearArea();
                                 setShowSuccess(false);
