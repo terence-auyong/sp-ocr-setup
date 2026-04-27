@@ -2,7 +2,7 @@ import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
 export async function POST(req: Request) {
     try {
-        const { email, fileName, fileBase64 } = await req.json();
+        const { email, fileName, fileBase64, subject, message } = await req.json();
 
         const ses = new SESv2Client({
             region: process.env.AWS_REGION || "ap-southeast-1",
@@ -10,25 +10,22 @@ export async function POST(req: Request) {
 
         const command = new SendEmailCommand({
             FromEmailAddress: "swiftpoint.noreply@electronicscience.net",
-            Destination: {
-                ToAddresses: [email],
-            },
+            Destination: { ToAddresses: [email] },
             Content: {
                 Raw: {
                     Data: await buildRawEmail({
                         from: "swiftpoint.noreply@electronicscience.net",
                         to: email,
-                        subject: "OCR Error File",
-                        text: "There were errors on your upload. Please click on the link below to view your file and try again. This download link is only valid within 5 days.",
+                        subject: subject || "OCR Notification",
+                        text: message || "No message provided.",
                         filename: fileName,
-                        fileBase64,
+                        fileBase64, // Can be undefined for success emails
                     }),
                 },
             },
         });
 
         const result = await ses.send(command);
-
         return Response.json({ success: true, messageId: result.MessageId });
     } catch (err) {
         console.error("SES Send Error:", err);
@@ -51,12 +48,13 @@ async function buildRawEmail({
     to: string;
     subject: string;
     text: string;
-    filename: string;
-    fileBase64: string;
+    filename?: string;
+    fileBase64?: string;
 }): Promise<Uint8Array> {
     const boundary = `----=_Part_${Date.now()}`;
-
-    const rawEmail = [
+    
+    // Start headers
+    const emailParts = [
         `From: ${from}`,
         `To: ${to}`,
         `Subject: ${subject}`,
@@ -68,16 +66,22 @@ async function buildRawEmail({
         ``,
         text,
         ``,
-        `--${boundary}`,
-        `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
-        `Content-Transfer-Encoding: base64`,
-        `Content-Disposition: attachment; filename="${filename}"`,
-        ``,
-        // Split base64 into 76-char lines as per MIME spec
-        fileBase64.match(/.{1,76}/g)?.join('\n') ?? fileBase64,
-        ``,
-        `--${boundary}--`,
-    ].join('\n');
+    ];
 
-    return new TextEncoder().encode(rawEmail);
+    // Conditionally add attachment if fileBase64 exists
+    if (fileBase64 && filename) {
+        emailParts.push(
+            `--${boundary}`,
+            `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
+            `Content-Transfer-Encoding: base64`,
+            `Content-Disposition: attachment; filename="${filename}"`,
+            ``,
+            fileBase64.match(/.{1,76}/g)?.join('\n') ?? fileBase64,
+            ``
+        );
+    }
+
+    emailParts.push(`--${boundary}--`);
+
+    return new TextEncoder().encode(emailParts.join('\n'));
 }

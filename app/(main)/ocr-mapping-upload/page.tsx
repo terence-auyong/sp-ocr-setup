@@ -1,18 +1,18 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import * as XLSX from 'xlsx';
-import { fetchAppOcrApi } from '@/services/app-ocr-api';
-import { fetchAppModule } from '@/services/app-module';
-import { fetchAppModuleExtended } from '@/services/app-module-extended';
-import { fetchAppChannel } from '@/services/app-channel';
-import { fetchAppStore } from '@/services/app-store';
-import { fetchAppRegion } from '@/services/app-region';
-import { fetchAppStoreChannel } from '@/services/app-store-channel';
-import { fetchAppStoreGroup } from '@/services/app-store-group';
-import { fetchAppStoreType } from '@/services/app-store-type';
-import { Check, Download, Send } from 'lucide-react';
+import { useState, useCallback, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import * as XLSX from "xlsx";
+import { fetchAppOcrApi } from "@/services/app-ocr-api";
+import { fetchAppModule } from "@/services/app-module";
+import { fetchAppModuleExtended } from "@/services/app-module-extended";
+import { fetchAppChannel } from "@/services/app-channel";
+import { fetchAppStore } from "@/services/app-store";
+import { fetchAppRegion } from "@/services/app-region";
+import { fetchAppStoreChannel } from "@/services/app-store-channel";
+import { fetchAppStoreGroup } from "@/services/app-store-group";
+import { fetchAppStoreType } from "@/services/app-store-type";
+import { Download } from "lucide-react";
 import {
     AppModule,
     AppOcrApi,
@@ -20,16 +20,15 @@ import {
     AppStoreChannel,
     AppStoreGroup,
     AppStoreType,
-} from '@/types/OcrTemplate';
-import DropZone from '@/components/ocr-mapping-upload/DropZone';
-import Badge from '@/components/ocr-mapping-upload/Badge';
-import { resolvePayloads } from '@/utils/ocr-upload-mapping/resolvePayloads';
-import { rowsToRaw } from '@/utils/ocr-upload-mapping/rowsToRaw';
-import { buildErrorWorkbook } from '@/utils/ocr-upload-mapping/buildErrorWorkbook';
-import EmailErrorModal from '@/components/ocr-mapping-upload/EmailErrorModal';
-import { LuCircleCheckBig } from 'react-icons/lu';
-import { useUploadStore } from '@/hooks/ocr-mapping-upload/useUpload';
-import { toast } from 'sonner';
+} from "@/types/OcrTemplate";
+import DropZone from "@/components/ocr-mapping-upload/DropZone";
+import Badge from "@/components/ocr-mapping-upload/Badge";
+import { resolvePayloads } from "@/utils/ocr-upload-mapping/resolvePayloads";
+import { rowsToRaw } from "@/utils/ocr-upload-mapping/rowsToRaw";
+import { buildErrorWorkbook } from "@/utils/ocr-upload-mapping/buildErrorWorkbook";
+import EmailErrorModal from "@/components/ocr-mapping-upload/EmailErrorModal";
+import { LuCircleCheckBig } from "react-icons/lu";
+import { useUploadStore } from "@/hooks/ocr-mapping-upload/useUpload";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -79,7 +78,7 @@ export interface OcrPayload {
 
 interface SendResult {
     payload: OcrPayload;
-    status: 'success' | 'error';
+    status: "success" | "error";
     message?: string;
 }
 
@@ -130,14 +129,12 @@ export interface RowError {
 
 interface OcrExcelUploaderProps {
     apiUrl?: string;
-    onComplete?: (results: SendResult[]) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const OcrExcelUploader = ({
-    apiUrl = '/api/ocr-upload',
-    onComplete,
+    apiUrl = "/api/ocr-upload"
 }: OcrExcelUploaderProps) => {
     const { startUpload, isUploading, uploadError, clearStore } =
         useUploadStore();
@@ -146,8 +143,11 @@ const OcrExcelUploader = ({
     const [payloads, setPayloads] = useState<OcrPayload[] | null>(null);
     const [resolveErrors, setResolveErrors] = useState<string[]>([]);
     const [parseError, setParseError] = useState<string | null>(null);
+
     const [rowCount, setRowCount] = useState(0);
     const [results, setResults] = useState<SendResult[] | null>(null);
+
+    const [isParsing, setIsParsing] = useState(false);
     const [fileName, setFileName] = useState<string | null>(null);
     const [rowErrorMap, setRowErrorMap] = useState<Record<number, RowError[]>>(
         {},
@@ -157,71 +157,81 @@ const OcrExcelUploader = ({
     const [showSuccess, setShowSuccess] = useState(false);
     const [showErrorModal, setShowErrorModal] = useState(false);
 
+    // ─── Queries ──────────────────────────────────────────────────────────────
+
     const { data: appOcrApi = [] } = useQuery<AppOcrApi[]>({
-        queryKey: ['appOcrApi'],
+        queryKey: ["appOcrApi"],
         queryFn: fetchAppOcrApi,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: appModule = [] } = useQuery<AppModule[]>({
-        queryKey: ['appModule'],
+        queryKey: ["appModule"],
         queryFn: fetchAppModule,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: appModuleExtended = [] } = useQuery<AppModule[]>({
-        queryKey: ['appModuleExtended'],
+        queryKey: ["appModuleExtended"],
         queryFn: fetchAppModuleExtended,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: channels = [] } = useQuery<AppChannel[]>({
-        queryKey: ['app-channels'],
+        queryKey: ["app-channels"],
         queryFn: fetchAppChannel,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: stores = [] } = useQuery<AppStore[]>({
-        queryKey: ['app-stores'],
+        queryKey: ["app-stores"],
         queryFn: fetchAppStore,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: regions = [] } = useQuery<AppRegion[]>({
-        queryKey: ['app-regions'],
+        queryKey: ["app-regions"],
         queryFn: fetchAppRegion,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: storeChannels = [] } = useQuery<AppStoreChannel[]>({
-        queryKey: ['app-store-channels'],
+        queryKey: ["app-store-channels"],
         queryFn: fetchAppStoreChannel,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: storeGroups = [] } = useQuery<AppStoreGroup[]>({
-        queryKey: ['app-store-groups'],
+        queryKey: ["app-store-groups"],
         queryFn: fetchAppStoreGroup,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
     const { data: storeTypes = [] } = useQuery<AppStoreType[]>({
-        queryKey: ['app-store-types'],
+        queryKey: ["app-store-types"],
         queryFn: fetchAppStoreType,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     });
 
+    // ─── Effects ──────────────────────────────────────────────────────────────
+
     useEffect(() => {
-        if (!rawPayloads) return;
+        if (!rawPayloads || rawPayloads.length === 0) return;
+
+        const queriesLoading =
+            !appOcrApi.length && !channels.length && !stores.length;
+
+        if (queriesLoading) return;
+
         const {
             payloads: resolved,
             errors,
@@ -238,8 +248,17 @@ const OcrExcelUploader = ({
             storeGroups,
             storeTypes,
         );
-        setPayloads(resolved);
-        setResolveErrors(errors);
+
+        setPayloads((prev) => {
+            if (JSON.stringify(prev) === JSON.stringify(resolved)) return prev;
+            return resolved;
+        });
+
+        setResolveErrors((prev) => {
+            if (JSON.stringify(prev) === JSON.stringify(errors)) return prev;
+            return errors;
+        });
+
         setRowErrorMap(errorsMap);
     }, [
         rawPayloads,
@@ -266,7 +285,10 @@ const OcrExcelUploader = ({
         }
     }, [uploadError]);
 
+    // ─── Handlers ─────────────────────────────────────────────────────────────
+
     const handleFile = useCallback((file: File) => {
+        setIsParsing(true);
         setOriginalFile(file);
         setFileName(file.name);
         setParseError(null);
@@ -279,11 +301,11 @@ const OcrExcelUploader = ({
         reader.onload = (e) => {
             try {
                 const wb = XLSX.read(e.target?.result, {
-                    type: 'array',
+                    type: "array",
                     cellStyles: true,
                 });
 
-                const targetSheet = 'OCR Mapping';
+                const targetSheet = "OCR Mapping";
                 const ws = wb.Sheets[targetSheet];
 
                 if (!ws) {
@@ -295,7 +317,7 @@ const OcrExcelUploader = ({
 
                 const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, {
                     header: 1,
-                    defval: '',
+                    defval: "",
                 });
 
                 const mainHeaders = allRows[0] as string[];
@@ -303,8 +325,8 @@ const OcrExcelUploader = ({
                 const dataRows = allRows.slice(4);
 
                 const headers = mainHeaders.map((h, i) => {
-                    const main = String(h || '').trim();
-                    const sub = String(subHeaderRow[i] || '').trim();
+                    const main = String(h || "").trim();
+                    const sub = String(subHeaderRow[i] || "").trim();
                     return sub || main;
                 });
 
@@ -312,18 +334,18 @@ const OcrExcelUploader = ({
                     .map((row) =>
                         headers.reduce<Record<string, unknown>>(
                             (acc, key, i) => {
-                                if (key) acc[key] = (row as unknown[])[i] ?? '';
+                                if (key) acc[key] = (row as unknown[])[i] ?? "";
                                 return acc;
                             },
                             {},
                         ),
                     )
                     .filter((row) =>
-                        Object.values(row).some((v) => String(v).trim() !== ''),
+                        Object.values(row).some((v) => String(v).trim() !== ""),
                     );
 
                 if (!rows.length) {
-                    setParseError('No data rows found starting at Row 5.');
+                    setParseError("No data rows found starting at Row 5.");
                     return;
                 }
 
@@ -334,49 +356,89 @@ const OcrExcelUploader = ({
                 setParseError(
                     `Failed to parse file: ${(err as Error).message}`,
                 );
+            } finally {
+                setIsParsing(false);
             }
         };
         reader.readAsArrayBuffer(file);
     }, []);
 
     /**
-     * Builds the error workbook and sends it to the API route,
-     * which emails it as an attachment to the provided address.
+     * Called when the user clicks Submit.
+     * Always opens the email modal first — branching happens after email is entered.
      */
-    const handleSendErrorEmail = async (email: string) => {
-        if (!originalFile || !fileName) throw new Error('No file available.');
+    const handleSubmitClick = () => {
+        setEmailModalOpen(true);
+    };
 
-        const buffer = await buildErrorWorkbook(originalFile, rowErrorMap);
+    /**
+     * Called from EmailErrorModal once the user confirms their email.
+     * - If the file has errors  → send an error report email, then show confirmation.
+     * - If the file is clean    → upload to DB, then send a success email.
+     */
+    const handleModalConfirm = async (email: string) => {
+        setEmailModalOpen(false);
+        setShowSuccess(false);
 
-        // Convert ArrayBuffer → base64 for JSON transport
-        const base64 = Buffer.from(buffer).toString('base64');
+        const EMAIL_API_ROUTE = "/api/send-error-report";
 
-        const res = await fetch('/api/send-error-report', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, fileName, fileBase64: base64 }),
-        });
+        if (hasErrors) {
+            // ── Error path: email the error report, do NOT upload ──
+            if (!originalFile || !fileName)
+                throw new Error("No file available.");
 
-        if (!res.ok) {
-            const { error } = await res.json().catch(() => ({}));
-            throw new Error(error ?? `Server error ${res.status}`);
+            const buffer = await buildErrorWorkbook(originalFile, rowErrorMap);
+            const base64 = Buffer.from(buffer).toString("base64");
+
+            const res = await fetch(EMAIL_API_ROUTE, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    email,
+                    fileName,
+                    fileBase64: base64,
+                    subject: "OCR Mapping Upload",
+                    message:
+                        "There were errors on your upload. Please click on the link below to view your file and try again.",
+                }),
+            });
+
+            if (!res.ok) {
+                const { error } = await res.json().catch(() => ({}));
+                throw new Error(error ?? `Server error ${res.status}`);
+            }
+
+            clearArea();
+            setShowSuccess(true);
+        } else {
+            if (!payloads) return;
+
+            try {
+                await startUpload(apiUrl, payloads);
+                await fetch(EMAIL_API_ROUTE, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        email,
+                        fileName,
+                        subject: "OCR Mapping Upload",
+                        message: "Your OCR mapping data from has been successfully uploaded.",
+                    }),
+                });
+
+                clearArea();
+                setShowSuccess(true);
+            } catch (err) {
+                console.error("Upload failed:", err);
+                clearArea();
+            }
         }
     };
 
-    const handleSend = async () => {
-        if (!payloads) return;
-
-        startUpload(apiUrl, payloads).catch((err) => {
-            console.error('Upload failed:', err);
-        });
-
-        clearArea();
-    };
-
     const downloadTemplate = () => {
-        const link = document.createElement('a');
-        link.href = '/templates/OCR_Mapping_Form.xlsx';
-        link.download = 'OCR_Mapping_Form.xlsx';
+        const link = document.createElement("a");
+        link.href = "/templates/OCR_Mapping_Form.xlsx";
+        link.download = "OCR_Mapping_Form.xlsx";
         link.click();
     };
 
@@ -391,17 +453,16 @@ const OcrExcelUploader = ({
         setRowCount(0);
     };
 
-    const canSend =
-        payloads !== null && resolveErrors.length === 0 && !isUploading;
+    // ─── Derived state ────────────────────────────────────────────────────────
 
+    const isLoading = isUploading || isParsing;
     const hasData = payloads !== null;
     const hasErrors = resolveErrors.length > 0;
-
-    // The button is "clickable" only if there is data, no errors, and we aren't already uploading
-    const canClickSubmit = hasData && !hasErrors && !isUploading;
+    const canClickSubmit = hasData && !isLoading;
 
     return (
         <>
+            {/* ── Success overlay ── */}
             {showSuccess && (
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20">
                     <div className="bg-white rounded p-4 shadow-lg flex flex-col items-center gap-3 w-64">
@@ -426,6 +487,7 @@ const OcrExcelUploader = ({
                 </div>
             )}
 
+            {/* ── Upload failure overlay ── */}
             {showErrorModal && (
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-30">
                     <div className="bg-white rounded p-6 shadow-xl flex flex-col items-center gap-4 w-80">
@@ -435,7 +497,7 @@ const OcrExcelUploader = ({
                             </h3>
                             <p className="text-sm text-gray-500 mt-1">
                                 {uploadError ||
-                                    'There was a problem processing your request.'}
+                                    "There was a problem processing your request."}
                             </p>
                         </div>
                         <button
@@ -464,7 +526,7 @@ const OcrExcelUploader = ({
                 </div>
 
                 <div className="w-160 h-80 relative">
-                    {isUploading ? (
+                    {isLoading ? (
                         <div className="w-full h-full border-2 border-dashed border-blue-200 rounded-lg flex flex-col items-center justify-center gap-3">
                             <div className="w-10 h-10 border-4 border-blue-300 border-t-transparent rounded-full animate-spin" />
                             <p className="text-sm font-medium text-gray-400">
@@ -474,7 +536,7 @@ const OcrExcelUploader = ({
                     ) : (
                         <DropZone
                             onFile={handleFile}
-                            disabled={isUploading}
+                            disabled={isLoading}
                             fileName={fileName}
                         />
                     )}
@@ -486,53 +548,30 @@ const OcrExcelUploader = ({
                     </div>
                 )}
 
-                {resolveErrors.length > 0 && (
-                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
-                        <div className="flex justify-between items-center">
-                            <p className="text-xs font-semibold text-red-700">
-                                Error — cannot proceed
-                            </p>
-                            <button
-                                onClick={() => setEmailModalOpen(true)}
-                                className="flex items-center gap-1 text-xs font-bold bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition-colors"
-                            >
-                                <Send size={12} />
-                                Send Report
-                            </button>
-                        </div>
-                    </div>
-                )}
-
                 <div className="flex items-center justify-between gap-3 mt-4">
                     <div className="flex items-center gap-2 flex-wrap">
                         {hasData && (
                             <Badge variant="blue">{rowCount} rows</Badge>
-                        )}
-                        {hasErrors && (
-                            <Badge variant="red">
-                                With error
-                                {resolveErrors.length !== 1 ? 's' : ''}
-                            </Badge>
                         )}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
                         <button
                             onClick={clearArea}
-                            disabled={!hasData || isUploading}
+                            disabled={!hasData || isLoading}
                             className="text-sm px-4 py-2 rounded border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         >
                             Remove
                         </button>
 
                         <button
-                            onClick={handleSend}
+                            onClick={handleSubmitClick}
                             disabled={!canClickSubmit}
                             className={`text-sm px-5 py-2 rounded font-semibold text-white transition-colors 
                                 ${
                                     canClickSubmit
-                                        ? 'bg-blue-500 hover:bg-blue-600'
-                                        : 'bg-gray-300 cursor-not-allowed opacity-70'
+                                        ? "bg-blue-500 hover:bg-blue-600"
+                                        : "bg-gray-300 cursor-not-allowed opacity-70"
                                 }`}
                         >
                             Submit
@@ -540,10 +579,15 @@ const OcrExcelUploader = ({
                     </div>
                 </div>
             </div>
+
+            {/*
+             * EmailErrorModal is now the single entry point for both paths.
+             * The `onSend` prop receives the email and drives the branching logic.
+             */}
             <EmailErrorModal
                 isOpen={emailModalOpen}
                 onClose={() => setEmailModalOpen(false)}
-                onSend={handleSendErrorEmail}
+                onSend={handleModalConfirm}
             />
         </>
     );
