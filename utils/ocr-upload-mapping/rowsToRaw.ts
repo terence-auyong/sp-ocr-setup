@@ -2,7 +2,7 @@ import {
     RawBatch,
     RawGroup,
     RawPayload,
-} from '@/app/(main)/ocr-mapping-upload/page';
+} from '@/types/ocrMappingUpload';
 import { formatDate } from './formatDate';
 
 export const rowsToRaw = (rows: Record<string, unknown>[]): RawPayload[] => {

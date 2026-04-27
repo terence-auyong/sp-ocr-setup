@@ -211,7 +211,7 @@ const page = () => {
                 />
             )}
             <div className="flex flex-1 gap-4 overflow-hidden">
-                <div className="h-full flex flex-col border-r border-gray-200 pr-4">
+                <div className="h-full flex flex-col border-r border-gray-200 pr-4 w-72">
                     <div className="flex items-center bg-gray-100 rounded gap-2 pl-2 mb-4">
                         <LuSearch size={20} color="gray"/>
                         <input 

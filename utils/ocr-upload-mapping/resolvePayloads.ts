@@ -5,7 +5,7 @@ import {
     OcrPayload,
     RawPayload,
     RowError,
-} from '@/app/(main)/ocr-mapping-upload/page';
+} from '@/types/ocrMappingUpload';
 import {
     AppModule,
     AppOcrApi,
@@ -13,7 +13,7 @@ import {
     AppStoreChannel,
     AppStoreGroup,
     AppStoreType,
-} from '@/types/OcrTemplate';
+} from '@/types/ocrTemplate';
 
 interface ResolveResult {
     payloads: OcrPayload[];

@@ -1,6 +1,5 @@
 import ExcelJS from 'exceljs';
-import { RowError } from '@/app/(main)/ocr-mapping-upload/page'; 
-
+import { RowError } from '@/types/ocrMappingUpload';
 /**
  * Builds an ExcelJS workbook buffer with error highlights applied.
  * Extracted so both "download" and "send via email" flows share the same logic.

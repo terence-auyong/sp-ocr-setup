@@ -2,7 +2,7 @@ import { useOcrTemplate } from "@/contexts/OcrTemplateContexts";
 import { fetchAppModule } from "@/services/app-module";
 import { fetchAppModuleExtended } from "@/services/app-module-extended";
 import { fetchAppOcrApi } from "@/services/app-ocr-api"
-import { AppModule, AppOcrApi, OcrTemplateStepsProps } from "@/types/OcrTemplate";
+import { AppModule, AppOcrApi, OcrTemplateStepsProps } from "@/types/ocrTemplate";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 

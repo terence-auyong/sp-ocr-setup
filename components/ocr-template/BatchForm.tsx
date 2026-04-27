@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { MultiSelect } from "./MultiSelect";
 import { fetchAppChannel } from "@/services/app-channel";
 import { fetchAppStore } from "@/services/app-store";
-import { BatchEntry } from "@/types/OcrTemplate";
+import { BatchEntry } from "@/types/ocrTemplate";
 
 type AppStore = {
     id: number;

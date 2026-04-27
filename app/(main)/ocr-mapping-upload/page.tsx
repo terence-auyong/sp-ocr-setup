@@ -13,14 +13,6 @@ import { fetchAppStoreChannel } from "@/services/app-store-channel";
 import { fetchAppStoreGroup } from "@/services/app-store-group";
 import { fetchAppStoreType } from "@/services/app-store-type";
 import { Download } from "lucide-react";
-import {
-    AppModule,
-    AppOcrApi,
-    AppRegion,
-    AppStoreChannel,
-    AppStoreGroup,
-    AppStoreType,
-} from "@/types/OcrTemplate";
 import DropZone from "@/components/ocr-mapping-upload/DropZone";
 import Badge from "@/components/ocr-mapping-upload/Badge";
 import { resolvePayloads } from "@/utils/ocr-upload-mapping/resolvePayloads";
@@ -29,109 +21,27 @@ import { buildErrorWorkbook } from "@/utils/ocr-upload-mapping/buildErrorWorkboo
 import EmailErrorModal from "@/components/ocr-mapping-upload/EmailErrorModal";
 import { LuCircleCheckBig } from "react-icons/lu";
 import { useUploadStore } from "@/hooks/ocr-mapping-upload/useUpload";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface AppStore {
-    id: number;
-    store_code: string;
-    name: string;
-    channel_id: number;
-    store_type_id: number | null;
-    store_group_id: number | null;
-}
-
-export interface AppChannel {
-    id: number;
-    code: string;
-    name: string;
-    store_channel_id: number | null;
-}
-
-export interface Group {
-    siteGroup: AppChannel;
-    store: AppStore;
-    region: AppRegion | null;
-    storeChannel: AppStoreChannel | null;
-    storeGroup: AppStoreGroup | null;
-    storeType: AppStoreType | null;
-    startDate: string | null;
-    endDate: string | null;
-    isDelete: number | null;
-}
-
-interface Batch {
-    id: string;
-    maxScan: number;
-    groups: Group[];
-}
-
-export interface OcrPayload {
-    ocrCode: string;
-    ocrName: string;
-    description: string;
-    ocrApi: AppOcrApi | null;
-    moduleCode: AppModule | null;
-    extendedModuleCodes: AppModule[];
-    batches: Batch[];
-}
-
-interface SendResult {
-    payload: OcrPayload;
-    status: "success" | "error";
-    message?: string;
-}
-
-export interface RawGroup {
-    siteGroupCode: string;
-    storeCode: string;
-    regionCode: string;
-    channelCode: string;
-    storeGroupCode: string;
-    storeTypeCode: string;
-    startDate: string | null;
-    endDate: string | null;
-    isDelete: string;
-    rowNumber: number;
-    moduleInventory: string;
-    moduleNearExpiry: string;
-    moduleOsa: string;
-    moduleShareOfShelf: string;
-}
-
-export interface RawBatch {
-    id: string;
-    maxScan: number;
-    groups: RawGroup[];
-    groupMap: Record<string, RawGroup>;
-    rowNumbers: number[];
-}
-
-export interface RawPayload {
-    ocrCode: string;
-    ocrName: string;
-    description: string;
-    ocrApiName: string;
-    moduleInventory: string;
-    moduleNearExpiry: string;
-    moduleOsa: string;
-    moduleShareOfShelf: string;
-    batches: RawBatch[];
-    batchMap: Record<string, RawBatch>;
-    rowNumbers: number[];
-    emptyLocationRows: number[];
-}
-
-export interface RowError {
-    column: string;
-    message: string;
-}
+import { 
+    AppChannel, 
+    AppStore, 
+    OcrPayload, 
+    RawPayload, 
+    RowError, 
+    SendResult 
+} from "@/types/ocrMappingUpload";
+import { 
+    AppModule, 
+    AppOcrApi, 
+    AppRegion, 
+    AppStoreChannel, 
+    AppStoreGroup, 
+    AppStoreType 
+} 
+from "@/types/ocrTemplate";
 
 interface OcrExcelUploaderProps {
     apiUrl?: string;
 }
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 const OcrExcelUploader = ({
     apiUrl = "/api/ocr-upload"
@@ -285,8 +195,6 @@ const OcrExcelUploader = ({
         }
     }, [uploadError]);
 
-    // ─── Handlers ─────────────────────────────────────────────────────────────
-
     const handleFile = useCallback((file: File) => {
         setIsParsing(true);
         setOriginalFile(file);
@@ -363,19 +271,7 @@ const OcrExcelUploader = ({
         reader.readAsArrayBuffer(file);
     }, []);
 
-    /**
-     * Called when the user clicks Submit.
-     * Always opens the email modal first — branching happens after email is entered.
-     */
-    const handleSubmitClick = () => {
-        setEmailModalOpen(true);
-    };
-
-    /**
-     * Called from EmailErrorModal once the user confirms their email.
-     * - If the file has errors  → send an error report email, then show confirmation.
-     * - If the file is clean    → upload to DB, then send a success email.
-     */
+    // Called from EmailErrorModal once the user confirms their email.
     const handleModalConfirm = async (email: string) => {
         setEmailModalOpen(false);
         setShowSuccess(false);
@@ -383,7 +279,6 @@ const OcrExcelUploader = ({
         const EMAIL_API_ROUTE = "/api/send-error-report";
 
         if (hasErrors) {
-            // ── Error path: email the error report, do NOT upload ──
             if (!originalFile || !fileName)
                 throw new Error("No file available.");
 
@@ -453,8 +348,6 @@ const OcrExcelUploader = ({
         setRowCount(0);
     };
 
-    // ─── Derived state ────────────────────────────────────────────────────────
-
     const isLoading = isUploading || isParsing;
     const hasData = payloads !== null;
     const hasErrors = resolveErrors.length > 0;
@@ -462,7 +355,7 @@ const OcrExcelUploader = ({
 
     return (
         <>
-            {/* ── Success overlay ── */}
+            {/* Success Modal */}
             {showSuccess && (
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20">
                     <div className="bg-white rounded p-4 shadow-lg flex flex-col items-center gap-3 w-64">
@@ -487,7 +380,7 @@ const OcrExcelUploader = ({
                 </div>
             )}
 
-            {/* ── Upload failure overlay ── */}
+            {/* Upload Failure Modal */}
             {showErrorModal && (
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-30">
                     <div className="bg-white rounded p-6 shadow-xl flex flex-col items-center gap-4 w-80">
@@ -513,6 +406,7 @@ const OcrExcelUploader = ({
                 </div>
             )}
 
+            {/* Main Component */}
             <div className="max-w-168 bg-white p-4 rounded-sm mx-auto font-sans space-y-4 shadow-sm">
                 <div className="flex items-center justify-between">
                     <h1 className="font-bold text-lg">OCR Mapping Upload</h1>
@@ -554,7 +448,6 @@ const OcrExcelUploader = ({
                             <Badge variant="blue">{rowCount} rows</Badge>
                         )}
                     </div>
-
                     <div className="flex items-center gap-2 shrink-0">
                         <button
                             onClick={clearArea}
@@ -563,9 +456,8 @@ const OcrExcelUploader = ({
                         >
                             Remove
                         </button>
-
                         <button
-                            onClick={handleSubmitClick}
+                            onClick={() => setEmailModalOpen(true)}
                             disabled={!canClickSubmit}
                             className={`text-sm px-5 py-2 rounded font-semibold text-white transition-colors 
                                 ${
@@ -579,11 +471,6 @@ const OcrExcelUploader = ({
                     </div>
                 </div>
             </div>
-
-            {/*
-             * EmailErrorModal is now the single entry point for both paths.
-             * The `onSend` prop receives the email and drives the branching logic.
-             */}
             <EmailErrorModal
                 isOpen={emailModalOpen}
                 onClose={() => setEmailModalOpen(false)}

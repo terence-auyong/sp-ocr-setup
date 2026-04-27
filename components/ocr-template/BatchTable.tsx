@@ -1,4 +1,4 @@
-import { BatchEntry } from "@/types/OcrTemplate";
+import { BatchEntry } from "@/types/ocrTemplate";
 import { Pen, Trash } from "lucide-react";
 
 export function BatchTable({

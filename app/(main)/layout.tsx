@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import Sidebar from "@/components/common/SideBar";
 import { STAGE_COOKIE_NAME } from "@/lib/edtr-stage-constants";
 import { getStoredUser, StoredUser } from "@/lib/auth-storage";
-import Spinner from "@/components/common/Spinner";
+import { useQueryClient } from "@tanstack/react-query";
 
 const pages = [
     { label: "OCR Template", href: "/", requiresAuth: true },
@@ -24,6 +24,8 @@ function getStageFromCookie(): "qa" | "dev" | "uat" | "prod" {
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
     const { user, logout } = useAuth();
+    const queryClient = useQueryClient();
+
     const router = useRouter();
     const [environment, setEnvironment] = useState<"qa" | "dev" | "uat" | "prod">("qa");
     const [storedUser, setStoredUser] = useState<StoredUser | null>(null); 
@@ -45,6 +47,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         setIsLoggingOut(true); 
         try {
             await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+            queryClient.clear(); 
         } catch (error) {
             console.error("Logout failed", error);
         } finally {

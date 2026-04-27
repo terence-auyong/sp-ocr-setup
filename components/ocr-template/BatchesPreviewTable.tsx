@@ -1,4 +1,4 @@
-import { BatchEntry } from "@/types/OcrTemplate";
+import { BatchEntry } from "@/types/ocrTemplate";
 
 export function BatchesPreviewTable({ rows }: { rows: BatchEntry[] }) {
     if (rows.length === 0) {

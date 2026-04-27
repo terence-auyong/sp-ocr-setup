@@ -1,4 +1,4 @@
-import { OcrTemplateData } from "@/types/OcrTemplate";
+import { OcrTemplateData } from "@/types/ocrTemplate";
 
 export const fetchOcrSetup = async (formData: OcrTemplateData) => {
   const payload = {
