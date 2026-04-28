@@ -2,16 +2,15 @@ export const generateInvScript = (
     areaData: AreaDataState, 
     inventoryGroupCode: string,
 ) => {
-    const checkedAreas = Object.entries(areaData).filter(([_, value]) => value.checked);
-    
-    if (checkedAreas.length === 0) {
-        return "-- No areas selected";
+    if (Object.keys(areaData).length === 0) {
+        return "-- No changes detected";
     }
 
-    const scripts = checkedAreas.map(([areaName, data]) => {
-        return `
--- ========================================
--- SCRIPT FOR AREA: ${areaName}
+    const scripts = Object.entries(areaData).map(([areaName, data]) => {
+        const isUnchecked = data.ocr_area_status === 0;
+
+        return `-- ========================================
+-- SCRIPT FOR AREA: ${areaName} (${isUnchecked ? "DISABLE" : "ENABLE"})
 -- ========================================
 
 -- STEP 1: GET INVENTORY GROUP ID
@@ -51,7 +50,7 @@ SET @version = (
     ) + 1
 );
 
--- STEP 4: UPSERT OCR AREA (ENABLE)
+-- STEP 4: UPSERT OCR AREA (${isUnchecked ? "DISABLE" : "ENABLE"})
 INSERT INTO app_inv_area_store_type_config_mapping (
     type_id,
     inv_area_store_group_id,
@@ -65,30 +64,46 @@ INSERT INTO app_inv_area_store_type_config_mapping (
 VALUES (
     @inventory_area_id,
     @inventory_group_id,
-    (SELECT id FROM app_type_config WHERE code = 'OCR_AREA' AND value = 1),
+    (SELECT id FROM app_type_config WHERE code = 'OCR_AREA' AND status = 1),
     '${data.ocrCode}',
-    1,
+    ${data.ocr_area_status},
     @version,
     NOW(),
     'root'
 )
 ON DUPLICATE KEY UPDATE
-    status = 1,
-    version = @version;
+    status = ${data.ocr_area_status},
+    version = @version,
+    modified_by = 'root';
 
-${data.ocr_code_status && data.ocr_code_status === 1 ? `
--- STEP 5: UPDATE EXISTING OCR CODE
+${isUnchecked ? `
+-- STEP 5: DISABLE EXISTING OCR CODE
 UPDATE app_inv_area_store_type_config_mapping
 SET
-    value = '${data.ocrCode}',
-    status = 1,
-    version = @version
+    status = 0,
+    version = @version,
+    modified_by = 'root'
 WHERE
     type_id = @inventory_area_id
     AND inv_area_store_group_id = @inventory_group_id
     AND type_config_id = (
         SELECT id FROM app_type_config
-        WHERE code = 'OCR_CODE' AND value = 1
+        WHERE code = 'OCR_CODE' AND status = 1
+    );
+` : data.ocr_code_status === 1 ? `
+-- STEP 5: UPDATE EXISTING OCR CODE
+UPDATE app_inv_area_store_type_config_mapping
+SET
+    value = '${data.ocrCode}',
+    status = ${data.ocr_area_status},
+    version = @version,
+    modified_by = 'root'
+WHERE
+    type_id = @inventory_area_id
+    AND inv_area_store_group_id = @inventory_group_id
+    AND type_config_id = (
+        SELECT id FROM app_type_config
+        WHERE code = 'OCR_CODE' AND status = 1
     );
 ` : `
 -- STEP 5: INSERT NEW OCR CODE
@@ -105,9 +120,9 @@ INSERT INTO app_inv_area_store_type_config_mapping (
 VALUES (
     @inventory_area_id,
     @inventory_group_id,
-    (SELECT id FROM app_type_config WHERE code = 'OCR_CODE' AND value = 1),
+    (SELECT id FROM app_type_config WHERE code = 'OCR_CODE' AND status = 1),
     '${data.ocrCode}',
-    1,
+    ${data.ocr_area_status},
     @version,
     NOW(),
     'root'

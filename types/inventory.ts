@@ -29,13 +29,18 @@ type AreaData = {
 };
 
 type AreaDataState = {
-  	[key: string]: {
-		checked: boolean;
-		ocrCode: string;
-		ocr_area_status: number;
+    [key: string]: {
+        checked: boolean;
+        ocrCode: string;
+        ocr_area_status: number;
         ocr_code_status: number;
-		error?: boolean;
-		duplicate?: boolean;
-	};
+        config_codes?: string;
+        error?: boolean;
+        duplicate?: boolean;
+        changedFields?: {
+            status: boolean;
+            code: boolean;
+        };
+    };
 };
 

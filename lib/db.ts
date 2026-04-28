@@ -38,6 +38,48 @@ export async function getPool(req: NextRequest): Promise<mysql.Pool> {
   return pool;
 }
 
+// export async function getPool(req: NextRequest): Promise<mysql.Pool> {
+//   const stage = getStageFromRequest(req);
+//   const schemaName = await getSchemaNameFromRequest(req);
+//   const key = poolKey(stage, schemaName);
+
+//   if (globalForDb.pools[key]) return globalForDb.pools[key];
+
+//   let pool;
+
+//   // Configuration shared by both local and cloud
+//   const poolConfig = {
+//     waitForConnections: true,
+//     connectionLimit: 20, // Increased to handle parallel "Blasting"
+//     queueLimit: 0,
+//     enableKeepAlive: true,
+//     keepAliveInitialDelay: 10000,
+//   };
+
+//   if (process.env.DB_HOST) {
+//     pool = mysql.createPool({
+//       ...poolConfig,
+//       host: process.env.DB_HOST,
+//       user: process.env.DB_USER,
+//       password: process.env.DB_PASSWORD,
+//       database: process.env.DB_NAME,
+//     });
+//   } else {
+//     // This is where your Cloud credentials come in
+//     const creds = await getCredentialsForStage(stage, schemaName);
+//     pool = mysql.createPool({
+//       ...poolConfig,
+//       host: creds.host,
+//       user: creds.user,
+//       password: creds.password,
+//       database: creds.database,
+//     });
+//   }
+
+//   globalForDb.pools[key] = pool;
+//   return pool;
+// }
+
 /**
  * Closes and removes the DB pool for the given stage and schema_name.
  * Call this on logout so the next login gets a fresh connection.

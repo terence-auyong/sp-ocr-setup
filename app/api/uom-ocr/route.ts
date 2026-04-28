@@ -16,10 +16,10 @@ export const POST = async (req: NextRequest) => {
         const { shortName, ocrCode } = payload;
 
         if (!shortName || !ocrCode) {
-        return NextResponse.json(
-            { error: "Missing required fields: shortName and ocrCode" },
-            { status: 400 }
-        );
+            return NextResponse.json(
+                { error: "Missing required fields: shortName and ocrCode" },
+                { status: 400 }
+            );
         }
 
         await conn.beginTransaction();
