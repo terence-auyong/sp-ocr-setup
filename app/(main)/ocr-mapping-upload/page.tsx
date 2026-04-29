@@ -29,15 +29,7 @@ import {
     RowError, 
     SendResult 
 } from "@/types/ocrMappingUpload";
-import { 
-    AppModule, 
-    AppOcrApi, 
-    AppRegion, 
-    AppStoreChannel, 
-    AppStoreGroup, 
-    AppStoreType 
-} 
-from "@/types/ocrTemplate";
+import { AppModule, AppOcrApi, AppRegion, AppStoreChannel, AppStoreGroup, AppStoreType } from "@/types/ocrTemplate";
 
 interface OcrExcelUploaderProps {
     apiUrl?: string;
