@@ -32,11 +32,11 @@ import {
 import { AppModule, AppOcrApi, AppRegion, AppStoreChannel, AppStoreGroup, AppStoreType } from "@/types/ocrTemplate";
 
 interface OcrExcelUploaderProps {
-    apiUrl?: string;
+    apiUrl: string;
 }
 
 const OcrExcelUploader = ({
-    apiUrl = "/api/ocr-upload"
+    apiUrl
 }: OcrExcelUploaderProps) => {
     const { startUpload, isUploading, uploadError, clearStore } =
         useUploadStore();
@@ -458,7 +458,7 @@ const OcrExcelUploader = ({
                                         : "bg-gray-300 cursor-not-allowed opacity-70"
                                 }`}
                         >
-                            Submit
+                            Upload
                         </button>
                     </div>
                 </div>
