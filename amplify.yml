@@ -10,12 +10,16 @@ frontend:
   phases:
     preBuild:
       commands:
+        - sudo fallocate -l 20G /swapfile
+        - sudo chmod 600 /swapfile
+        - sudo mkswap /swapfile
+        - sudo swapon /swapfile
         - corepack enable
         - pnpm install --no-frozen-lockfile
     build:
       commands:
         - export GENERATE_SOURCEMAP=false
-        - export NODE_OPTIONS="--max-old-space-size=4096"
+        - export NODE_OPTIONS="--max-old-space-size=8192"
         - pnpm run build
   artifacts:
     baseDirectory: .next
