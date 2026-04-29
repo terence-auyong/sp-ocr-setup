@@ -19,7 +19,7 @@ frontend:
     build:
       commands:
         - export GENERATE_SOURCEMAP=false
-        - export NODE_OPTIONS="--max-old-space-size=12288"
+        - export NODE_OPTIONS="--max-old-space-size=32768"
         - pnpm run build
   artifacts:
     baseDirectory: .next
