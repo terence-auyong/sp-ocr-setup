@@ -14,8 +14,9 @@ frontend:
         - pnpm install --no-frozen-lockfile
     build:
       commands:
+        - export GENERATE_SOURCEMAP=false
         - export NODE_OPTIONS="--max-old-space-size=4096"
-        - pnpm run build --no-turbo
+        - pnpm run build
   artifacts:
     baseDirectory: .next
     files:
