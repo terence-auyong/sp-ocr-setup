@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LuX } from "react-icons/lu";
+import { X } from "lucide-react";
 import { STAGE_COOKIE_NAME, EDTR_STAGES, STAGE_LABELS, type EdtrStage } from "@/lib/edtr-stage-constants";
 
 type DbCredentialsProps = {
@@ -83,7 +83,7 @@ const DbCredentials = ({onClose, onLoginSuccess}: DbCredentialsProps) => {
                     onClick={onClose}
                     disabled={isLoading}
                 >
-                    <LuX size={20} color="gray"/>
+                    <X size={20} color="gray"/>
                 </button>
             </div>
             

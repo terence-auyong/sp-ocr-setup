@@ -4,7 +4,7 @@ import Spinner from '@/components/common/Spinner';
 import { fetchInventoryArea, fetchInventoryGroup } from '@/services/inventory';
 import PreviewInventoryGroup from '@/components/inventory-group/PreviewInventoryGroup';
 import { useQuery } from '@tanstack/react-query';
-import { LuSearch } from 'react-icons/lu';
+import { Search } from 'lucide-react';
 
 const page = () => {
     const [searchTerm, setSearchTerm] = useState(""); 
@@ -213,7 +213,7 @@ const page = () => {
             <div className="flex flex-1 gap-4 overflow-hidden">
                 <div className="h-full flex flex-col border-r border-gray-200 pr-4 w-72">
                     <div className="flex items-center bg-gray-100 rounded gap-2 pl-2 mb-4">
-                        <LuSearch size={20} color="gray"/>
+                        <Search size={20} color="gray"/>
                         <input 
                             type="text" 
                             placeholder="Search..." 
@@ -259,7 +259,7 @@ const page = () => {
                                         </h1>
                                     </div>
                                     <div className="flex items-center bg-gray-100 rounded gap-2 pl-2 h-12">
-                                        <LuSearch size={20} color="gray"/>
+                                        <Search size={20} color="gray"/>
                                         <input 
                                             type="text" 
                                             placeholder="Search Areas..." 

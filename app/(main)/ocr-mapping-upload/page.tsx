@@ -19,7 +19,7 @@ import { resolvePayloads } from "@/utils/ocr-upload-mapping/resolvePayloads";
 import { rowsToRaw } from "@/utils/ocr-upload-mapping/rowsToRaw";
 import { buildErrorWorkbook } from "@/utils/ocr-upload-mapping/buildErrorWorkbook";
 import EmailErrorModal from "@/components/ocr-mapping-upload/EmailErrorModal";
-import { LuCircleCheckBig } from "react-icons/lu";
+import { CircleCheckBig } from "lucide-react";
 import { useUploadStore } from "@/hooks/ocr-mapping-upload/useUpload";
 import { 
     AppChannel, 
@@ -352,7 +352,7 @@ const OcrExcelUploader = ({
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20">
                     <div className="bg-white rounded p-4 shadow-lg flex flex-col items-center gap-3 w-64">
                         <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                            <LuCircleCheckBig size={40} color="green" />
+                            <CircleCheckBig size={40} color="green" />
                         </div>
                         <div className="text-center">
                             <h3 className="text-lg font-semibold text-black">

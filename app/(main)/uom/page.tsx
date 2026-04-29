@@ -4,7 +4,7 @@ import Spinner from "@/components/common/Spinner";
 import { fetchUom } from "@/services/uom";
 import PreviewUom from "@/components/uom/PreviewUom";
 import { useQuery } from "@tanstack/react-query";
-import { LuSearch } from "react-icons/lu";
+import { Search } from "lucide-react";
 
 const UomOcr = () => {
     const [searchTerm, setSearchTerm] = useState("");
@@ -71,7 +71,7 @@ const UomOcr = () => {
 					<p className="text-gray-400">{filteredItems.length} items</p>
 				</div>
                 <div className="flex items-center bg-gray-100 rounded gap-2 pl-2">
-                    <LuSearch size={20} color="gray"/>
+                    <Search size={20} color="gray"/>
                     <input 
                         type="text" 
                         placeholder="Search UOM..." 

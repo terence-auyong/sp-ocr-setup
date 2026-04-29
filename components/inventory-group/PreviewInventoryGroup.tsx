@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LuCircleCheckBig } from 'react-icons/lu';
+import { CircleCheckBig } from 'lucide-react';
 import { generateInvScript } from '@/utils/scripts';
 import { submitInventoryOcr } from '@/services/inventory-ocr';
 
@@ -68,7 +68,7 @@ const PreviewInventoryGroup = ({
                     <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20">
                         <div className="bg-white rounded p-4 shadow-lg flex flex-col items-center gap-3">
                             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                                <LuCircleCheckBig size={40} color="green" />
+                                <CircleCheckBig size={40} color="green" />
                             </div>
                             <h3 className="text-lg font-semibold text-black">
                                 Executed Successfully!

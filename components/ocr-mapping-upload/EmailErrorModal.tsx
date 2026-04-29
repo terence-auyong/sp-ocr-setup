@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { X, Send, Loader2 } from 'lucide-react';
-import { LuCircleCheckBig } from "react-icons/lu";
+import { CircleCheckBig } from "lucide-react";
 
 interface EmailErrorModalProps {
     isOpen: boolean;
