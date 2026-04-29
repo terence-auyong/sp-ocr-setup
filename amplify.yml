@@ -8,9 +8,14 @@ backend:
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
 frontend:
   phases:
+    preBuild:
+      commands:
+        - corepack enable
+        - pnpm install --no-frozen-lockfile
     build:
       commands:
-        - NODE_OPTIONS="--max-old-space-size=4096" pnpm run build
+        - export NODE_OPTIONS="--max-old-space-size=4096"
+        - pnpm run build --no-turbo
   artifacts:
     baseDirectory: .next
     files:
